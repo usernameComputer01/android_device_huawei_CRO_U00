@@ -1,0 +1,4939 @@
+From e0a6334d754cc7dc51e2af4ae6ffe74541e27987 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Wed, 8 Mar 2023 06:26:22 +0300
+Subject: [PATCH] MTK AudioAPI-Add
+
+Change-Id: I0444b9965acce77a8139b2ff6fafa9b30babe862
+---
+ include/media/ATVCtrl.h                  | 239 ++++++
+ include/media/AudioPCMxWay.h             | 212 ++++++
+ include/media/AudioSystem.h              |  17 +
+ include/media/AudioTrackCenter.h         |  86 +++
+ include/media/IATVCtrlClient.h           | 126 ++++
+ include/media/IATVCtrlService.h          | 179 +++++
+ include/media/IAudioFlinger.h            |  19 +
+ media/libmedia/ATVCtrl.cpp               | 881 +++++++++++++++++++++++
+ media/libmedia/Android.mk                |  33 +
+ media/libmedia/AudioPCMxWay.cpp          | 420 +++++++++++
+ media/libmedia/AudioParameter.cpp        |   4 +
+ media/libmedia/AudioSystem.cpp           | 186 +++++
+ media/libmedia/AudioTrackCenter.cpp      | 369 ++++++++++
+ media/libmedia/IATVCtrlClient.cpp        | 269 +++++++
+ media/libmedia/IATVCtrlService.cpp       | 829 +++++++++++++++++++++
+ media/libmedia/IAudioFlinger.cpp         | 312 ++++++++
+ media/libstagefright/avc_utils.cpp       | 137 ++++
+ media/libstagefright/include/avc_utils.h |  11 +
+ services/audioflinger/AudioFlinger.cpp   | 336 +++++++++
+ services/audioflinger/AudioFlinger.h     |  21 +
+ 20 files changed, 4686 insertions(+)
+ create mode 100644 include/media/ATVCtrl.h
+ create mode 100644 include/media/AudioPCMxWay.h
+ create mode 100644 include/media/AudioTrackCenter.h
+ create mode 100644 include/media/IATVCtrlClient.h
+ create mode 100644 include/media/IATVCtrlService.h
+ create mode 100644 media/libmedia/ATVCtrl.cpp
+ create mode 100644 media/libmedia/AudioPCMxWay.cpp
+ create mode 100755 media/libmedia/AudioTrackCenter.cpp
+ create mode 100644 media/libmedia/IATVCtrlClient.cpp
+ create mode 100644 media/libmedia/IATVCtrlService.cpp
+
+diff --git a/include/media/ATVCtrl.h b/include/media/ATVCtrl.h
+new file mode 100644
+index 0000000..79436e0
+--- /dev/null
++++ b/include/media/ATVCtrl.h
+@@ -0,0 +1,239 @@
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   ATVCtr.h
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Service Interface
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 12 12 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 12 12 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++#ifndef ANDROID_ATVCTRL_H_
++#define ANDROID_ATVCTRL_H_
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++
++#include <utils/RefBase.h>
++#include <utils/threads.h>
++#include <media/IATVCtrlService.h>
++#include <media/mediaplayer.h>
++
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++
++namespace android
++{
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++typedef int kal_bool;
++typedef signed char  kal_int8;
++typedef unsigned char  kal_uint8;
++typedef signed short  kal_int16;
++typedef unsigned short  kal_uint16;
++typedef signed int    kal_int32;
++typedef unsigned int  kal_uint32;
++
++//callback function for return scan state
++typedef  void (*matv_autoscan_progress_chstate_cb)(void *cb_param, kal_uint8 precent, kal_uint8 ch, kal_uint8 chnum, void *ptr, int len);
++
++// callback function
++typedef  void (*matv_autoscan_progress_cb)(void *cb_param, kal_uint8 precent, kal_uint8 ch, kal_uint8 chnum);
++typedef  void (*matv_fullscan_progress_cb)(void *cb_param, kal_uint8 precent, kal_uint32 freq, kal_uint32 freq_start, kal_uint32 freq_end);
++typedef  void (*matv_scanfinish_cb)(void *cb_param, kal_uint8 chnum);
++typedef  void (*matv_audioformat_cb)(void *cb_param, kal_uint32 format);
++typedef  void (*matv_shutdown_cb)(void *cb_param, kal_uint32 source);
++
++typedef struct
++{
++    kal_uint32  freq; //khz
++    kal_uint8   sndsys; /* reference sv_const.h, TV_AUD_SYS_T ...*/
++    kal_uint8   colsys; /* reference sv_const.h, SV_CS_PAL_N, SV_CS_PAL,SV_CS_NTSC358...*/
++    kal_uint8   flag;
++} matv_ch_entry;
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++// ref-counted object for callbacks
++class ATVListener:  virtual public RefBase
++{
++public:
++    virtual  void autoscan_progress_chstate_cb(kal_uint8 precent, kal_uint8 ch, kal_uint8 chnum, void *ptr, int len) = 0;
++    virtual  void fullscan_progress_cb(kal_uint8 precent, kal_uint32 freq, kal_uint32 freq_start, kal_uint32 freq_end) = 0;
++    virtual  void scanfinish_cb(kal_uint8 chnum) = 0;
++    virtual  void audioformat_cb(kal_uint32 format) = 0;
++    virtual  void shutdown_cb(kal_uint32 source) = 0;
++};
++
++class ATVCtrl
++{
++public:
++
++    ATVCtrl();
++    ~ATVCtrl();
++
++    // ATVCtrl interface ============================================================
++    // On/Off Control
++    static int ATVC_matv_init(void);
++    static int ATVC_matv_ps_init(int on);
++    static int ATVC_matv_suspend(int on);
++    static int ATVC_matv_shutdown(void);
++    // Channel Control
++    static void ATVC_matv_chscan(int mode);
++    static void ATVC_matv_chscan_stop(void);
++    //   int ATVC_matv_get_chtable(int ch, void *entry, int len);
++    //   int ATVC_matv_set_chtable(int ch, void *entry, int len);
++    static int ATVC_matv_get_chtable(int ch, matv_ch_entry *entry);
++    static int ATVC_matv_set_chtable(int ch, matv_ch_entry *entry);
++
++    static int ATVC_matv_clear_chtable(void);
++    static void ATVC_matv_change_channel(int ch);
++    static void ATVC_matv_set_country(int country);
++    static void ATVC_matv_set_tparam(int mode);
++    // Audio Control
++    static void ATVC_matv_audio_play(void);
++    static void ATVC_matv_audio_stop(void);
++    static int ATVC_matv_audio_get_format(void);
++    static void ATVC_matv_audio_set_format(int val);
++    static int ATVC_matv_audio_get_sound_system(void);
++    // Adjustment
++    static int ATVC_matv_adjust(int item, int val);
++    // Meta
++    static int ATVC_matv_get_chipdep(int item);
++    static int ATVC_matv_set_chipdep(int item, int val);
++    static void ATVC_matv_setListener(const sp<ATVListener>& listener);
++    //FM
++    static void notify(int msg, int ext1, int ext2);
++    static int ATVC_fm_setListener(sp<MediaPlayerListener> listener);
++    static int ATVC_fm_powerup(void/*struct fm_tune_parm*/ *t_parm);
++    static int ATVC_fm_powerdown(void);
++    static int ATVC_fm_getrssi(int *val);
++    static int ATVC_fm_tune(void/*struct fm_tune_parm*/ *t_parm);
++    static int ATVC_fm_seek(void/*struct fm_seek_parm*/ *s_parm);
++    static int ATVC_fm_scan(void/*struct fm_scan_parm*/ *s_parm);
++    static int ATVC_fm_mute(int val);
++    static int ATVC_fm_getchipid(unsigned short int *val);
++    static int ATVC_fm_isRDSsupport(int *val);
++    static int ATVC_fm_isFMPowerUp(int *val);
++
++    // Callback
++    static void ATVC_matv_register_callback(void *cb_param,
++                                            matv_autoscan_progress_chstate_cb auto_cb,
++                                            matv_fullscan_progress_cb full_cb,
++                                            matv_scanfinish_cb finish_cb,
++                                            matv_audioformat_cb audfmt_cb,
++                                            matv_shutdown_cb shutdown_cb);
++
++    // helper function to obtain ATVCtrl service handle
++    static const sp<IATVCtrlService>& get_ATVCtrlService();
++    static const sp<IATVCtrlService>& get_ATVCtrlService_FM();
++    static const sp<ATVListener>& get_ATVListener();
++
++private:
++
++    class ATVCtrlClient: public IBinder::DeathRecipient, public BnATVCtrlClient
++    {
++    public:
++        ATVCtrlClient()
++        {
++        }
++        // DeathRecipient
++        virtual void binderDied(const wp<IBinder>& who);
++
++        // IATVCtrlClient
++        virtual void AutoScan_CB(int precent, int ch, int chnum, void *ptr, int len);
++        virtual void FullScan_CB(int precent, int freq, int freq_start, int freq_end);
++        virtual void ScanFinish_CB(int chnum);
++        virtual void AudioFmt_CB(int format);
++        virtual void Shutdown_CB(int source);
++        virtual void notify(int msg, int ext1, int ext2);
++    };
++
++    static sp<ATVCtrlClient> spATVCtrlClient;
++    static sp<ATVCtrlClient> spATVCtrlClient_FM;
++    friend class ATVCtrlClient;
++    static Mutex mLock;
++    static sp<IATVCtrlService> spATVCtrlService;
++    static sp<ATVListener>     mListener;
++
++    static matv_autoscan_progress_chstate_cb gATVAutoScan_CB;
++    static matv_fullscan_progress_cb gATVFullScan_CB;
++    static matv_scanfinish_cb        gATVScanFinish_CB;
++    static matv_audioformat_cb       gATVAudFormat_CB;
++    static matv_shutdown_cb       gATVShutdown_CB;
++    static void *m_Object;
++
++    static Mutex mATVLock;
++    static Mutex mCallbackLock;
++    static Mutex                       mNotifyLock;
++    static sp<MediaPlayerListener>     mFMListener;
++
++};
++
++};  // namespace android
++
++#endif  /*ANDROID_ATVCTRL_H_*/
+diff --git a/include/media/AudioPCMxWay.h b/include/media/AudioPCMxWay.h
+new file mode 100644
+index 0000000..28cd274
+--- /dev/null
++++ b/include/media/AudioPCMxWay.h
+@@ -0,0 +1,212 @@
++
++/*
++ * Copyright (C) 2007 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_AUDIOPCMXWAY_H
++#define ANDROID_AUDIOPCMXWAY_H
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include <media/AudioSystem.h>
++
++#include <utils/RefBase.h>
++#include <utils/Errors.h>
++#include <binder/IInterface.h>
++#include <binder/IMemory.h>
++#include <utils/threads.h>
++
++
++namespace android
++{
++
++// ----------------------------------------------------------------------------
++
++// ----------------------------------------------------------------------------
++
++class AudioPCMxWay
++{
++public:
++
++    /* Events used by AudioPCMxWay callback function
++     */
++    enum event_type
++    {
++        EVENT_MORE_DATA = 0,        // Request to write more data to PCM buffer.
++        EVENT_UNDERRUN = 1,         // PCM buffer underrun occured.
++        EVENT_BUFFER_END = 5        // Playback head is at the end of the buffer.
++    };
++
++    /* Stream type for Audio PCMxWay
++     */
++    enum stream_type
++    {
++        PCMXWAY_OUTPUT,
++        PCMXWAY_INPUT
++    };
++
++    /* Create Buffer on the stack and pass it to obtainBuffer()
++     * and releaseBuffer().
++     */
++
++    class Buffer
++    {
++    public:
++        enum
++        {
++            MUTE    = 0x00000001
++        };
++        uint32_t    flags;
++        int         channelCount;
++        int         format;
++        size_t      frameCount;
++        size_t      size;
++        union
++        {
++            void       *raw;
++            short      *i16;
++            int8_t     *i8;
++        };
++    };
++
++
++    /* As a convenience, if a callback is supplied, a handler thread
++     * is automatically created with the appropriate priority. This thread
++     * invokes the callback when a new buffer becomes availlable or an underrun condition occurs.
++     * Parameters:
++     *
++     * event:   type of event notified (see enum AudioTrack::event_type).
++     * user:    Pointer to context for use by the callback receiver.
++     * info:    Pointer to optional parameter according to event type:
++     *          - EVENT_MORE_DATA: pointer to AudioTrack::Buffer struct. The callback must not write
++     *          more bytes than indicated by 'size' field and update 'size' if less bytes are
++     *          written.
++     *          - EVENT_UNDERRUN: unused.
++     *          - EVENT_LOOP_END: pointer to an int indicating the number of loops remaining.
++     *          - EVENT_MARKER: pointer to an uin32_t containing the marker position in frames.
++     *          - EVENT_NEW_POS: pointer to an uin32_t containing the new position in frames.
++     *          - EVENT_BUFFER_END: unused.
++     */
++
++    typedef void (*callback_t)(int event, void *user, void *info);
++
++    AudioPCMxWay();
++
++    /*
++     * Parameters:
++     *
++     * streamType:         Select the type of audio stream this track is attached to
++     *                     (e.g. AudioSystem::MUSIC).
++     * cbf:                Callback function. If not null, this function is called periodically
++     *
++     */
++
++    AudioPCMxWay(int streamType,
++                 callback_t cbf       = 0,
++                 void *user           = 0
++                );
++
++
++    /* Terminates the AudioPCMxWay.
++     * Also destroys all resources assotiated with the AudioTrack.
++     */
++    ~AudioPCMxWay();
++
++
++    /* Initialize an uninitialized AudioPCMxWay.
++     * Returned status (from utils/Errors.h) can be:
++     *  - NO_ERROR: successful intialization
++     *  - INVALID_OPERATION: AudioPCMxWay is already intitialized
++     *  - BAD_VALUE: invalid parameter (channels, format, sampleRate...)
++     *  - NO_INIT: audio server or audio hardware not initialized
++     * */
++    status_t    set(int streamType      = -1,
++                    callback_t cbf      = 0,
++                    void *user          = 0
++                   );
++
++
++    /* Result of constructing the AudioPCMxWay. This must be checked
++     * before using any AudioPCMxWay API (except for set()), using
++     * an uninitialized AudioPCMxWay produces undefined results.
++     * See set() method above for possible return codes.
++     */
++    status_t    initCheck() const;
++
++
++    /* After it's created the track is not active. Call start() to
++     * make it active. If set, the callback will start being called.
++     */
++    void        start();
++
++    /* Stop a track. If set, the callback will cease being called and
++     * obtainBuffer returns STOPPED. Note that obtainBuffer() still works
++     * and will fill up buffers until the pool is exhausted.
++     */
++    void        stop();
++
++
++    /* As a convenience we provide a write() interface to the audio buffer.
++     * This is implemented on top of lockBuffer/unlockBuffer. For best
++     * performance
++     *
++     */
++    ssize_t     write(const void *buffer, size_t size);
++
++    /* As a convenience we provide a read() interface to the audio buffer.
++    * This is implemented on top of lockBuffer/unlockBuffer.
++    */
++    ssize_t     read(void *buffer, size_t size);
++
++
++private:
++    /* copying audio tracks is not allowed */
++    AudioPCMxWay(const AudioPCMxWay &other);
++    AudioPCMxWay &operator = (const AudioPCMxWay &other);
++
++    /* a small internal class to handle the callback */
++    class AudioPCMxWayThread : public Thread
++    {
++    public:
++        AudioPCMxWayThread(AudioPCMxWay &receiver);
++    private:
++        friend class AudioPCMxWay;
++        virtual bool        threadLoop();
++        virtual status_t    readyToRun();
++        virtual void        onFirstRef();
++        AudioPCMxWay &mReceiver;
++        Mutex       mLock;
++    };
++
++    bool processAudioBuffer();
++
++    status_t                mStatus;
++
++    sp<AudioPCMxWayThread>  mAudioPCMxWayThread;
++
++    bool                    mStarted;
++
++    volatile int32_t        mActive;
++
++    callback_t              mCbf;
++    void                   *mUserData;
++    uint8_t                 mStreamType;
++};
++
++
++}; // namespace android
++
++#endif // ANDROID_AUDIOTRACK_H
+diff --git a/include/media/AudioSystem.h b/include/media/AudioSystem.h
+index b3f8887..f791bbf 100644
+--- a/include/media/AudioSystem.h
++++ b/include/media/AudioSystem.h
+@@ -455,6 +455,23 @@ private:
+     static sp<IAudioPolicyService> gAudioPolicyService;
+ #ifdef MTK_AUDIO
+ public:
++    static int xWayPlay_Start(int sample_rate);
++    static int xWayPlay_Stop(void);
++    static int xWayPlay_Write(void *buffer, int size_bytes);
++    static int xWayPlay_GetFreeBufferCount(void);
++    static int xWayRec_Start(int sample_rate);
++    static int xWayRec_Stop(void);
++    static int xWayRec_Read(void *buffer, int size_bytes);
++
++    static int ReadRefFromRing(void*buf, uint32_t datasz,void* DLtime);
++    static int GetVoiceUnlockULTime(void* DLtime);
++    static int SetVoiceUnlockSRC(uint outSR, uint outChannel);
++    static bool startVoiceUnlockDL();
++    static bool stopVoiceUnlockDL();
++    static void freeVoiceUnlockDLInstance();
++    static bool getVoiceUnlockDLInstance();
++    static int GetVoiceUnlockDLLatency();
++
+     static status_t GetEMParameter(void *ptr,size_t len);
+     static status_t SetEMParameter(void *ptr,size_t len);
+     static status_t SetAudioCommand(int par1,int par2);
+diff --git a/include/media/AudioTrackCenter.h b/include/media/AudioTrackCenter.h
+new file mode 100644
+index 0000000..e4d28bf
+--- /dev/null
++++ b/include/media/AudioTrackCenter.h
+@@ -0,0 +1,86 @@
++#ifndef AUDIO_TRACK_CENTER_H_
++#define AUDIO_TRACK_CENTER_H_
++
++#include <utils/Errors.h>
++#include <utils/KeyedVector.h>
++#include <utils/RefBase.h>
++#include <utils/Mutex.h>
++#include <utils/List.h>
++#include <media/stagefright/foundation/ABase.h>
++
++//#define AUDIO_TRACK_CENTER_DEBUG
++
++namespace android {
++
++class AudioTrackCenter : public RefBase {
++public:
++    AudioTrackCenter();
++
++    virtual ~AudioTrackCenter();
++
++        status_t addTrack(intptr_t trackId, uint32_t frameCount, uint32_t sampleRate, void* trackPtr,  uint32_t afFrameCount, uint32_t afSampleRate, uint32_t framesFilled);
++
++    status_t removeTrack(void* trackPtr);
++
++    status_t updateTrackMaps(void* trackPtr, void* sinkPtr);
++
++    status_t updateServer(intptr_t trackId, uint32_t server, bool restore=false);
++
++    intptr_t getTrackId(void* trackPtr=NULL, void* sinkPtr=NULL);
++
++    status_t getRealTimePosition(intptr_t trackId, int64_t *position);
++
++    status_t setTrackActive(intptr_t trackId, bool active);
++
++    status_t setTimeStretch(uint32_t timeScaled);
++
++    status_t reset(intptr_t trackId);
++
++    status_t reset_flush(intptr_t trackId) ;
++
++    status_t setTimeStretch(float timeScaled);
++
++private:
++    status_t init();
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++    float countDeltaUs(int64_t realTimeUs);
++#endif
++
++    struct TrackInfo {
++        uint32_t server;
++        uint32_t frameCount;
++        int64_t framePlayed;
++        uint32_t afFrameCount;
++        uint32_t sampleRate;
++        uint32_t middleServer;
++        bool active;
++        int64_t  ts;
++    };
++
++    struct TrackMaps {
++        intptr_t trackId;
++        void*    trackPtr;
++        void*    sinkPtr;
++    };
++
++    Mutex mLock;
++    KeyedVector<intptr_t, TrackInfo > mTrackList;
++    List<TrackMaps> mTrackMaps;
++
++    size_t mAfFrameCount;
++    uint32_t mAfSampleRate;
++    float mTimeScaled;
++
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++    int64_t mSysTimeUs;
++    int64_t mRealTimeUs;
++    float   mDeltaUs;
++#endif
++
++    DISALLOW_EVIL_CONSTRUCTORS(AudioTrackCenter);
++
++};
++
++}
++
++#endif  //AUDIO_TRACK_CENTER_H_
+diff --git a/include/media/IATVCtrlClient.h b/include/media/IATVCtrlClient.h
+new file mode 100644
+index 0000000..3f0aba9
+--- /dev/null
++++ b/include/media/IATVCtrlClient.h
+@@ -0,0 +1,126 @@
++
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   IATVCtrClient.h
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Client Interface
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 11 30 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 26 2011 changqing.yan
++ * NULL
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++#ifndef ANDROID_IATVCTRLCLIENT_H
++#define ANDROID_IATVCTRLCLIENT_H
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++#include <utils/RefBase.h>
++#include <binder/IInterface.h>
++#include <binder/Parcel.h>
++
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++
++namespace android
++{
++
++// ----------------------------------------------------------------------------
++
++class IATVCtrlClient : public IInterface
++{
++public:
++    DECLARE_META_INTERFACE(ATVCtrlClient);
++
++    virtual void AutoScan_CB(int precent, int ch, int chnum, void *ptr, int len) = 0;
++    virtual void FullScan_CB(int precent, int freq, int freq_start, int freq_end) = 0;
++    virtual void ScanFinish_CB(int chnum)   = 0;
++    virtual void AudioFmt_CB(int format) = 0;
++    virtual void Shutdown_CB(int format) = 0;
++    virtual void notify(int msg, int ext1, int ext2) = 0;
++};
++
++// ----------------------------------------------------------------------------
++
++class BnATVCtrlClient : public BnInterface<IATVCtrlClient>
++{
++public:
++    virtual status_t    onTransact(uint32_t code,
++                                   const Parcel &data,
++                                   Parcel *reply,
++                                   uint32_t flags = 0);
++};
++
++// ----------------------------------------------------------------------------
++
++}; // namespace android
++
++#endif // ANDROID_IATVCTRLCLIENT_H
+diff --git a/include/media/IATVCtrlService.h b/include/media/IATVCtrlService.h
+new file mode 100644
+index 0000000..3c56d91
+--- /dev/null
++++ b/include/media/IATVCtrlService.h
+@@ -0,0 +1,179 @@
++
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   ATVCtrlService.h
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Service Interface
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 12 12 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 12 12 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 30 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 26 2011 changqing.yan
++ * NULL
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++#ifndef ANDROID_IATVCTRLSERVICE_H
++#define ANDROID_IATVCTRLSERVICE_H
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++#include <stdint.h>
++#include <sys/types.h>
++#include <unistd.h>
++
++#include <utils/RefBase.h>
++#include <utils/Errors.h>
++#include <binder/IInterface.h>
++#include <media/IATVCtrlClient.h>
++
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++namespace android
++{
++
++class IATVCtrlService : public IInterface
++{
++public:
++    DECLARE_META_INTERFACE(ATVCtrlService);
++
++    // IATVCtrlService interface
++    // On/Off Control
++    virtual int ATVCS_matv_init(void) = 0;
++    virtual int ATVCS_matv_ps_init(int on) = 0;
++    virtual int ATVCS_matv_set_parameterb(int on) = 0;
++    virtual int ATVCS_matv_suspend(int on) = 0;
++    virtual int ATVCS_matv_shutdown(void) = 0;
++
++    // Channel Control
++    virtual void ATVCS_matv_chscan(int mode) = 0;
++    virtual void ATVCS_matv_chscan_stop(void) = 0;
++
++    virtual int ATVCS_matv_get_chtable(int ch, void *entry, int len)  = 0;
++    virtual int ATVCS_matv_set_chtable(int ch, void *entry, int len)  = 0;
++    virtual int ATVCS_matv_clear_chtable(void) = 0;
++
++    virtual void ATVCS_matv_change_channel(int ch) = 0;
++    virtual void ATVCS_matv_set_country(int country) = 0;
++    virtual void ATVCS_matv_set_tparam(int mode) = 0;
++
++    // Audio Control
++    virtual void ATVCS_matv_audio_play(void) = 0;
++    virtual void ATVCS_matv_audio_stop(void) = 0;
++    virtual int ATVCS_matv_audio_get_format(void) = 0;
++    virtual void ATVCS_matv_audio_set_format(int val) = 0;
++    virtual int ATVCS_matv_audio_get_sound_system(void) = 0;
++
++    // Adjustment
++    virtual int ATVCS_matv_adjust(int item, int val) = 0;
++
++    // Meta
++    virtual int ATVCS_matv_get_chipdep(int item) = 0;
++    virtual int ATVCS_matv_set_chipdep(int item, int val) = 0;
++    //FM
++    virtual int ATVCS_fm_powerup(void *parm, int len) = 0;
++    virtual int ATVCS_fm_powerdown(void) = 0;
++    virtual int ATVCS_fm_getrssi(void) = 0;
++    virtual int ATVCS_fm_tune(void *parm, int len) = 0;
++    virtual int ATVCS_fm_seek(void *parm, int len) = 0;
++    virtual int ATVCS_fm_scan(void *parm, int len) = 0;
++    virtual int ATVCS_fm_mute(int val) = 0;
++    virtual int ATVCS_fm_getchipid(void) = 0;
++    virtual int ATVCS_fm_isFMPowerUp(void) = 0;
++
++    // Callback
++    virtual void ATVCS_matv_register_callback() = 0;
++
++    // register a current process for audio output change notifications
++    virtual void registerClient(const sp<IATVCtrlClient>& client) = 0;
++    virtual void registerClient_FM(const sp<IATVCtrlClient>& client) = 0;
++
++    // CLI
++    virtual void CLI(char input) = 0;
++};
++
++
++class BnATVCtrlService : public BnInterface<IATVCtrlService>
++{
++public:
++    virtual status_t    onTransact(uint32_t code,
++                                   const Parcel &data,
++                                   Parcel *reply,
++                                   uint32_t flags = 0);
++};
++
++}; // namespace android
++
++#endif // ANDROID_IATVCTRLSERVICE_H
+diff --git a/include/media/IAudioFlinger.h b/include/media/IAudioFlinger.h
+index e0b5a67..3f0d5aa 100644
+--- a/include/media/IAudioFlinger.h
++++ b/include/media/IAudioFlinger.h
+@@ -256,6 +256,25 @@ public:
+     virtual status_t GetAudioCommand(int parameters1) = 0;
+     virtual status_t SetAudioData(int par1,size_t len,void *ptr)=0;
+     virtual status_t GetAudioData(int par1,size_t len,void *ptr)=0;
++    /////////////////////////////////////////////////////////////////////////
++    //    for PCMxWay Interface API ...
++    /////////////////////////////////////////////////////////////////////////
++    virtual int xWayPlay_Start(int sample_rate) = 0;
++    virtual int xWayPlay_Stop(void) = 0;
++    virtual int xWayPlay_Write(void *buffer, int size_bytes) = 0;
++    virtual int xWayPlay_GetFreeBufferCount(void) = 0;
++    virtual int xWayRec_Start(int sample_rate) = 0;
++    virtual int xWayRec_Stop(void) = 0;
++    virtual int xWayRec_Read(void *buffer, int size_bytes) = 0;
++
++    virtual int ReadRefFromRing(void*buf, uint32_t datasz, void* DLtime) = 0;
++    virtual int GetVoiceUnlockULTime(void* DLtime) = 0;
++    virtual int SetVoiceUnlockSRC(uint outSR, uint outCH) = 0;
++    virtual bool startVoiceUnlockDL() = 0;
++    virtual bool stopVoiceUnlockDL() = 0;
++    virtual void freeVoiceUnlockDLInstance () = 0;
++    virtual int GetVoiceUnlockDLLatency() = 0;
++    virtual bool getVoiceUnlockDLInstance() = 0;
+ //MTK_AUDIO_ADD>
+ #endif
+ };
+diff --git a/media/libmedia/ATVCtrl.cpp b/media/libmedia/ATVCtrl.cpp
+new file mode 100644
+index 0000000..a0e8d4d
+--- /dev/null
++++ b/media/libmedia/ATVCtrl.cpp
+@@ -0,0 +1,881 @@
++
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   ATVCtrl.cpp
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Client
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 11 30 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 26 2011 changqing.yan
++ * NULL
++ * .
++ *
++ * 11 22 2011 changqing.yan
++ * [ALPS00095391] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++#define LOG_TAG "ATVCtrl"
++#define MTK_LOG_ENABLE 1
++#include <utils/Log.h>
++#include <cutils/log.h>
++#include <binder/IServiceManager.h>
++#include <media/ATVCtrl.h>
++#include <math.h>
++
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++namespace android
++{
++
++Mutex ATVCtrl::mLock;
++Mutex ATVCtrl::mATVLock;
++Mutex ATVCtrl::mNotifyLock;
++
++sp<IATVCtrlService> ATVCtrl::spATVCtrlService;
++sp<ATVCtrl::ATVCtrlClient> ATVCtrl::spATVCtrlClient;
++sp<ATVCtrl::ATVCtrlClient> ATVCtrl::spATVCtrlClient_FM;
++sp<ATVListener>     ATVCtrl::mListener;
++sp<MediaPlayerListener>    ATVCtrl::mFMListener = NULL;
++
++matv_autoscan_progress_chstate_cb ATVCtrl::gATVAutoScan_CB = NULL;
++matv_fullscan_progress_cb         ATVCtrl::gATVFullScan_CB = NULL;
++matv_scanfinish_cb                ATVCtrl::gATVScanFinish_CB = NULL;
++matv_audioformat_cb               ATVCtrl::gATVAudFormat_CB = NULL;
++matv_shutdown_cb                   ATVCtrl::gATVShutdown_CB = NULL;
++
++void *ATVCtrl::m_Object = NULL;
++Mutex ATVCtrl::mCallbackLock;
++
++struct fm_tune_parm
++{
++    uint8_t err;
++    uint8_t band;
++    uint8_t space;
++    uint8_t hilo;
++    uint16_t freq; // IN/OUT parameter
++};
++
++struct fm_seek_parm
++{
++    uint8_t err;
++    uint8_t band;
++    uint8_t space;
++    uint8_t hilo;
++    uint8_t seekdir;
++    uint8_t seekth;
++    uint16_t freq; // IN/OUT parameter
++};
++
++//for hw scan
++struct fm_scan_parm
++{
++    uint8_t  err;
++    uint8_t  band;
++    uint8_t  space;
++    uint8_t  hilo;
++    uint16_t freq; // OUT parameter
++    uint16_t ScanTBL[16]; //need no less than the chip
++    uint16_t ScanTBLSize; //IN/OUT parameter
++};
++
++
++// establish binder interface to ATVCtrlService service
++const sp<IATVCtrlService>& ATVCtrl::get_ATVCtrlService()
++{
++    SLOGD("get_ATVCtrlService()");
++    Mutex::Autolock _l(mLock);
++
++    if (spATVCtrlService.get() == 0 || spATVCtrlClient == NULL)
++    {
++        sp<IServiceManager> sm = defaultServiceManager();
++        sp<IBinder> binder;
++
++        do
++        {
++            binder = sm->getService(String16("media.ATVCtrlService"));
++
++            if (binder != 0)
++            {
++                break;
++            }
++
++            SLOGW("ATVCtrlService not published, waiting...");
++            usleep(500000); // 0.5 s
++        }
++        while (true);
++
++        if (spATVCtrlClient == NULL)
++        {
++            spATVCtrlClient = new ATVCtrlClient();
++        }
++        else
++        {
++            /*
++                     if (gATVErrorCallback){
++                            gATVErrorCallback(NO_ERROR);
++                     }
++            */
++            SLOGD(" spATVCtrlClient exist ");
++        }
++
++        binder->linkToDeath(spATVCtrlClient);
++        spATVCtrlService = interface_cast<IATVCtrlService>(binder);
++        spATVCtrlService->registerClient(spATVCtrlClient);
++        SLOGD(" ATVCtrlService is published, or new spATVCtrlClient ");
++    }
++
++    if (spATVCtrlService == 0)
++    {
++        SLOGE("no ATVCtrlService!?");
++    }
++
++    return spATVCtrlService;
++}
++
++const sp<IATVCtrlService>& ATVCtrl::get_ATVCtrlService_FM()
++{
++    SLOGD("get_ATVCtrlService_FM()");
++    Mutex::Autolock _l(mLock);
++
++    if (spATVCtrlService.get() == 0 || spATVCtrlClient_FM == NULL)
++    {
++        sp<IServiceManager> sm = defaultServiceManager();
++        sp<IBinder> binder;
++
++        do
++        {
++            binder = sm->getService(String16("media.ATVCtrlService"));
++
++            if (binder != 0)
++            {
++                break;
++            }
++
++            SLOGW("ATVCtrlService not published, waiting...");
++            usleep(500000); // 0.5 s
++        }
++        while (true);
++
++        if (spATVCtrlClient_FM == NULL)
++        {
++            spATVCtrlClient_FM = new ATVCtrlClient();
++        }
++        else
++        {
++            /*
++                     if (gATVErrorCallback){
++                            gATVErrorCallback(NO_ERROR);
++                     }
++            */
++            SLOGD(" spATVCtrlClient_FM exist ");
++        }
++
++        binder->linkToDeath(spATVCtrlClient_FM);
++        spATVCtrlService = interface_cast<IATVCtrlService>(binder);
++        spATVCtrlService->registerClient_FM(spATVCtrlClient_FM);
++        SLOGD(" ATVCtrlService is published, or new spATVCtrlClient_FM ");
++    }
++
++    if (spATVCtrlService == 0)
++    {
++        SLOGE("no ATVCtrlService!?");
++    }
++
++    return spATVCtrlService;
++}
++
++const sp<ATVListener>& ATVCtrl::get_ATVListener()
++{
++    return mListener;
++}
++ATVCtrl::ATVCtrl()
++{
++    //m_Object = NULL;
++}
++
++ATVCtrl::~ATVCtrl()
++{
++
++}
++
++int ATVCtrl::ATVC_matv_init()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_init");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_init();
++    return ret;
++}
++
++int ATVCtrl::ATVC_matv_ps_init(int on)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_init on = %d", on);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_ps_init(on);
++    return ret;
++}
++
++int ATVCtrl::ATVC_matv_suspend(int on)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_suspend on=%d", on);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_suspend(on);
++    return ret;
++}
++int ATVCtrl::ATVC_matv_shutdown()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_shutdown");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_shutdown();
++
++    spATVCtrlClient = NULL;
++    return ret;
++}
++void ATVCtrl::ATVC_matv_chscan(int mode)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_chscan mode=%d", mode);
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_chscan(mode);
++}
++void ATVCtrl::ATVC_matv_chscan_stop()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_chscan_stop");
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_chscan_stop();
++}
++int ATVCtrl::ATVC_matv_get_chtable(int ch, matv_ch_entry *entry)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_get_chtable ch=%d, entry=%p", ch, entry);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)entry;
++    int len = sizeof(matv_ch_entry);
++    SLOGD("ATVC_matv_get_chtable len=%d", len);
++    ret = atvcs->ATVCS_matv_get_chtable(ch, ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_matv_set_chtable(int ch, matv_ch_entry *entry)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_set_chtable ch=%d, entry=%p", ch, entry);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)entry;
++    int len = sizeof(matv_ch_entry);
++    SLOGD("ATVC_matv_set_chtable len=%d", len);
++    ret = atvcs->ATVCS_matv_set_chtable(ch, ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_matv_clear_chtable()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_clear_chtable");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_clear_chtable();
++    return ret;
++}
++void ATVCtrl::ATVC_matv_change_channel(int ch)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_change_channel ch=%d", ch);
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_change_channel(ch);
++}
++void ATVCtrl::ATVC_matv_set_country(int country)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_set_country country=%d", country);
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_set_country(country);
++}
++void ATVCtrl::ATVC_matv_set_tparam(int mode)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_set_tparam mode=%d", mode);
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_set_tparam(mode);
++}
++void ATVCtrl::ATVC_matv_audio_play()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_audio_play");
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_audio_play();
++}
++void ATVCtrl::ATVC_matv_audio_stop()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_audio_stop");
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_audio_stop();
++}
++int ATVCtrl::ATVC_matv_audio_get_format()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_audio_get_format");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_audio_get_format();
++    return ret;
++}
++void ATVCtrl::ATVC_matv_audio_set_format(int val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_audio_set_format val=%d", val);
++
++    if (atvcs == 0)
++    {
++        return;
++    }
++
++    atvcs->ATVCS_matv_audio_set_format(val);
++}
++int ATVCtrl::ATVC_matv_audio_get_sound_system()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_audio_get_sound_system");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_audio_get_sound_system();
++    return ret;
++}
++int ATVCtrl::ATVC_matv_adjust(int item, int val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_adjust item=%d, val=%d", item, val);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_adjust(item, val);
++    return ret;
++}
++int ATVCtrl::ATVC_matv_get_chipdep(int item)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_get_chipdep item=%d", item);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_get_chipdep(item);
++    return ret;
++}
++int ATVCtrl::ATVC_matv_set_chipdep(int item, int val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++    SLOGD("ATVC_matv_set_chipdep item=%d val=%d", item, val);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_matv_set_chipdep(item, val);
++    return ret;
++}
++
++int ATVCtrl::ATVC_fm_setListener(sp<MediaPlayerListener> listener)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_setListener");
++
++    if (atvcs == 0)
++    {
++        SLOGD("ATVC_fm_setListener error");
++        return PERMISSION_DENIED;
++    }
++    else
++    {
++        SLOGD("ATVC_fm_setListener success");
++        mFMListener = listener;
++        return 1;
++    }
++
++}
++
++int ATVCtrl::ATVC_fm_powerup(void /*struct fm_tune_parm*/ *t_parm)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    struct fm_tune_parm *parm = (struct fm_tune_parm *)t_parm;
++    SLOGD("ATVC_fm_powerup parm=%p", parm);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)parm;
++    int len = sizeof(struct fm_tune_parm);
++    SLOGD("ATVC_fm_powerup len=%d", len);
++    ret = atvcs->ATVCS_fm_powerup(ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_fm_powerdown()
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_powerdown");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_fm_powerdown();
++    return ret;
++}
++int ATVCtrl::ATVC_fm_getrssi(int *val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_getrssi");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    *val = atvcs->ATVCS_fm_getrssi();
++    return NO_ERROR;
++}
++int ATVCtrl::ATVC_fm_tune(void /*struct fm_tune_parm*/ *t_parm)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    struct fm_tune_parm *parm = (struct fm_tune_parm *)t_parm;
++    SLOGD("ATVC_fm_tune parm=%p", parm);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)parm;
++    int len = sizeof(struct fm_tune_parm);
++    SLOGD("ATVC_fm_tune len=%d", len);
++    ret = atvcs->ATVCS_fm_tune(ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_fm_seek(void/*struct fm_seek_parm*/ *s_parm)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    struct fm_seek_parm *parm = (struct fm_seek_parm *)s_parm;
++    SLOGD("ATVC_fm_seek parm=%p", parm);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)parm;
++    int len = sizeof(struct fm_seek_parm);
++    SLOGD("ATVC_fm_seek len=%d", len);
++    ret = atvcs->ATVCS_fm_seek(ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_fm_scan(void/*struct fm_scan_parm*/ *s_parm)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    struct fm_scan_parm *parm = (struct fm_scan_parm *)s_parm;
++    SLOGD("ATVC_fm_seek parm=%p", parm);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret;
++    void *ptr = (void *)parm;
++    int len = sizeof(struct fm_scan_parm);
++    SLOGD("ATVC_fm_seek len=%d", len);
++    ret = atvcs->ATVCS_fm_scan(ptr, len);
++    return ret;
++}
++int ATVCtrl::ATVC_fm_mute(int val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_mute val=%d", val);
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    int ret = atvcs->ATVCS_fm_mute(val);
++    return ret;
++}
++int ATVCtrl::ATVC_fm_getchipid(unsigned short int *val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_getchipid");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    *val = (unsigned short int)atvcs->ATVCS_fm_getchipid();
++    return NO_ERROR;
++}
++int ATVCtrl::ATVC_fm_isRDSsupport(int *val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_isRDSsupport");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    *val = false;
++    return NO_ERROR;
++}
++int ATVCtrl::ATVC_fm_isFMPowerUp(int *val)
++{
++    Mutex::Autolock _l(mATVLock);
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService_FM();
++    SLOGD("ATVC_fm_isFMPowerUp");
++
++    if (atvcs == 0)
++    {
++        return PERMISSION_DENIED;
++    }
++
++    *val = atvcs->ATVCS_fm_isFMPowerUp();
++    return NO_ERROR;
++}
++// -------------------------------------------------------------------------------------------
++
++// DeathRecipient
++void ATVCtrl::ATVCtrlClient::binderDied(const wp<IBinder>& /*who*/)
++{
++    SLOGD("binderDied!");
++    Mutex::Autolock _l(ATVCtrl::mLock);
++    ATVCtrl::spATVCtrlService.clear();
++    SLOGD("ATVCtrlService server died!");
++}
++
++// IATVCtrlClient ==========================================================================
++void ATVCtrl::ATVCtrlClient::AutoScan_CB(int precent, int ch, int chnum, void *ptr, int len)
++{
++    Mutex::Autolock _l(mCallbackLock);
++    SLOGD("ATVCtrl::ATVCtrlClient::AutoScan_CB! m_Object=%p, precent=%d,ch=%d,chnum=%d,ptr=%p,len=%d", m_Object, precent, ch, chnum, ptr, len);
++    /*if ( gATVAutoScan_CB != NULL)
++    gATVAutoScan_CB((void *)m_Object,precent,ch,chnum, ptr, len);*/
++    sp<ATVListener> pListener = ATVCtrl::get_ATVListener();
++
++    if (pListener.get() != NULL)
++    {
++        pListener->autoscan_progress_chstate_cb(precent, ch, chnum, ptr, len);
++    }
++}
++
++void ATVCtrl::ATVCtrlClient::FullScan_CB(int precent, int freq, int freq_start, int freq_end)
++{
++    Mutex::Autolock _l(mCallbackLock);
++    SLOGD("ATVCtrl::ATVCtrlClient::FullScan_CB! m_Object=%p, precent=%d,freq=%d,freq_start=%d,freq_end=%d", m_Object, precent, freq, freq_start, freq_end);
++    /*if ( gATVFullScan_CB != NULL)
++    gATVFullScan_CB((void *)m_Object,precent,freq,freq_start,freq_end);*/
++    sp<ATVListener> pListener = ATVCtrl::get_ATVListener();
++
++    if (pListener.get() != NULL)
++    {
++        pListener->fullscan_progress_cb(precent, freq, freq_start, freq_end);
++    }
++}
++
++void ATVCtrl::ATVCtrlClient::ScanFinish_CB(int chnum)
++{
++    Mutex::Autolock _l(mCallbackLock);
++    SLOGD("ATVCtrl::ATVCtrlClient::ScanFinish_CB! m_Object=%p, chnum=%d", m_Object, chnum);
++    /* if ( gATVScanFinish_CB != NULL)
++     gATVScanFinish_CB((void *)m_Object,chnum);*/
++    sp<ATVListener> pListener = ATVCtrl::get_ATVListener();
++
++    if (pListener.get() != NULL)
++    {
++        pListener->scanfinish_cb(chnum);
++    }
++}
++
++void ATVCtrl::ATVCtrlClient::AudioFmt_CB(int format)
++{
++    Mutex::Autolock _l(mCallbackLock);
++    SLOGD("ATVCtrl::ATVCtrlClient::AudioFmt_CB! m_Object=%p, format=%d", m_Object, format);
++    /*if ( gATVAudFormat_CB != NULL)
++    gATVAudFormat_CB((void *)m_Object,format);*/
++    sp<ATVListener> pListener = ATVCtrl::get_ATVListener();
++
++    if (pListener.get() != NULL)
++    {
++        pListener->audioformat_cb(format);
++    }
++}
++
++void ATVCtrl::ATVCtrlClient::Shutdown_CB(int source)
++{
++    Mutex::Autolock _l(mCallbackLock);
++    SLOGD("ATVCtrl::ATVCtrlClient::Shutdown_CB! m_Object=%p, format=%d", m_Object, source);
++    /*if ( gATVShutdown_CB != NULL)
++    gATVShutdown_CB((void *)m_Object,source);*/
++    sp<ATVListener> pListener = ATVCtrl::get_ATVListener();
++
++    if (pListener.get() != NULL)
++    {
++        pListener->shutdown_cb(source);
++    }
++}
++
++void ATVCtrl::ATVC_matv_setListener(const sp<ATVListener>& listener)
++{
++    Mutex::Autolock _l(mATVLock);
++    mListener = listener;
++
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++
++    if (atvcs == NULL)
++    {
++        SLOGD("ATVC_matv_setListener atvcs = 0 ");
++        return;
++    }
++
++    return atvcs->ATVCS_matv_register_callback();
++}
++
++void ATVCtrl::ATVCtrlClient::notify(int msg, int ext1, int ext2)
++{
++    ATVCtrl::notify(msg, ext1, ext2);
++}
++
++void ATVCtrl::notify(int msg, int ext1, int ext2)
++{
++    sp<MediaPlayerListener> listener = mFMListener;
++    SLOGD("ATVCtrl::notify");
++
++    // this prevents re-entrant calls into client code
++    if (listener.get() != 0)
++    {
++        Mutex::Autolock _l(mNotifyLock);
++        SLOGD("NOTIFY APP +++,MSG %d", msg);
++        listener->notify(msg, ext1, ext2, NULL);
++        SLOGD("NOTIFY APP ---,MSG %d", msg);
++    }
++}
++
++void ATVCtrl::ATVC_matv_register_callback(void *cb_param,
++        matv_autoscan_progress_chstate_cb auto_cb,
++        matv_fullscan_progress_cb full_cb,
++        matv_scanfinish_cb finish_cb,
++        matv_audioformat_cb audfmt_cb,
++        matv_shutdown_cb shutdown_cb)
++{
++    Mutex::Autolock _l(mATVLock);
++    SLOGD("ATVC_matv_register_callback cb_param=%p", cb_param);
++    SLOGD("ATVC_matv_register_callback auto_cb=%p, full_cb=%p, finish_cb=%p, audfmt_cb=%p, shutdown_cb=%p", auto_cb, full_cb, finish_cb, audfmt_cb, shutdown_cb);
++    gATVAutoScan_CB = auto_cb;
++    gATVFullScan_CB = full_cb;
++    gATVScanFinish_CB = finish_cb;
++    gATVAudFormat_CB  = audfmt_cb;
++    gATVShutdown_CB  = shutdown_cb;
++    m_Object = cb_param;
++
++    const sp<IATVCtrlService>& atvcs = ATVCtrl::get_ATVCtrlService();
++
++    if (atvcs == NULL)
++    {
++        SLOGD("ATVC_matv_register_callback atvcs = 0 ");
++        return;
++    }
++
++    return atvcs->ATVCS_matv_register_callback();
++}
++
++}; // namespace android
+diff --git a/media/libmedia/Android.mk b/media/libmedia/Android.mk
+index efcd541..e2c2885 100644
+--- a/media/libmedia/Android.mk
++++ b/media/libmedia/Android.mk
+@@ -2,6 +2,12 @@ LOCAL_PATH:= $(call my-dir)
+ 
+ include $(CLEAR_VARS)
+ 
++ifeq ($(MTK_AUDIO),yes)
++LOCAL_CFLAGS += -DMTK_AUDIO
++LOCAL_C_INCLUDES+= \
++   $(TOP)/$(MTK_PATH_SOURCE)/hardware/audio/common/include
++endif
++
+ LOCAL_SRC_FILES:= \
+     AudioParameter.cpp
+ LOCAL_MODULE:= libmedia_helper
+@@ -14,6 +20,24 @@ include $(BUILD_STATIC_LIBRARY)
+ 
+ include $(CLEAR_VARS)
+ 
++ifeq ($(strip $(TARGET_BUILD_VARIANT)),eng)
++  LOCAL_CFLAGS += -DCONFIG_MT_ENG_BUILD
++else ifeq ($(strip $(TARGET_BUILD_VARIANT)), user)
++    LOCAL_CFLAGS += -DCONFIG_MT_USER_BUILD
++endif
++
++ifeq ($(MTK_AUDIO),yes)
++  LOCAL_CFLAGS += -DMTK_AUDIO
++endif
++
++ifeq ($(strip $(HAVE_AACENCODE_FEATURE)),yes)
++    LOCAL_CFLAGS += -DHAVE_AACENCODE_FEATURE
++endif
++
++ifeq ($(strip $(MTK_AUDIO_HD_REC_SUPPORT)), yes)
++	LOCAL_CFLAGS += -DMTK_AUDIO_HD_REC_SUPPORT
++endif
++
+ LOCAL_SRC_FILES:= \
+     AudioTrack.cpp \
+     AudioTrackShared.cpp \
+@@ -71,6 +95,15 @@ LOCAL_SRC_FILES:= \
+     AudioPolicy.cpp
+ 
+ 
++ifneq ($(strip $(MTK_USE_ANDROID_MM_DEFAULT_CODE)),yes)
++LOCAL_SRC_FILES += \
++    AudioPCMxWay.cpp \
++    ATVCtrl.cpp \
++    IATVCtrlClient.cpp \
++    IATVCtrlService.cpp \
++    AudioTrackCenter.cpp
++endif
++
+ #QTI Resampler
+ ifeq ($(call is-vendor-board-platform,QCOM), true)
+ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_RESAMPLER)), true)
+diff --git a/media/libmedia/AudioPCMxWay.cpp b/media/libmedia/AudioPCMxWay.cpp
+new file mode 100644
+index 0000000..523e01c
+--- /dev/null
++++ b/media/libmedia/AudioPCMxWay.cpp
+@@ -0,0 +1,420 @@
++
++/* //device/extlibs/pv/android/AudioTrack.cpp
++**
++** Copyright 2007, The Android Open Source Project
++**
++** Licensed under the Apache License, Version 2.0 (the "License");
++** you may not use this file except in compliance with the License.
++** You may obtain a copy of the License at
++**
++**     http://www.apache.org/licenses/LICENSE-2.0
++**
++** Unless required by applicable law or agreed to in writing, software
++** distributed under the License is distributed on an "AS IS" BASIS,
++** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++** See the License for the specific language governing permissions and
++** limitations under the License.
++*/
++
++
++#define LOG_TAG "AudioPCMxWay"
++
++#define MTK_LOG_ENABLE 1
++#include <stdint.h>
++#include <sys/types.h>
++#include <limits.h>
++
++#include <sched.h>
++#include <sys/resource.h>
++
++#include <media/AudioPCMxWay.h>
++#include <media/AudioSystem.h>
++
++#include <utils/Log.h>
++#include <cutils/log.h>
++#include <binder/MemoryDealer.h>
++#include <binder/Parcel.h>
++#include <binder/IPCThreadState.h>
++#include <utils/Timers.h>
++#include <cutils/atomic.h>
++
++
++#define THREAD_PRIORITY_AUDIO_CLIENT (ANDROID_PRIORITY_AUDIO)
++#define WAIT_PERIOD_MS          10
++
++namespace android
++{
++
++// ---------------------------------------------------------------------------
++
++AudioPCMxWay::AudioPCMxWay()
++    : mStatus(NO_INIT),
++      mAudioPCMxWayThread(NULL),
++      mStarted(false)
++{
++}
++
++AudioPCMxWay::AudioPCMxWay(
++    int streamType,
++    callback_t cbf,
++    void *user
++)
++    : mStatus(NO_INIT),
++      mAudioPCMxWayThread(NULL),
++      mStarted(false)
++{
++    mStatus = set(streamType, cbf, user);
++}
++
++
++AudioPCMxWay::~AudioPCMxWay()
++{
++
++    if (mStatus == NO_ERROR)
++    {
++        // Make sure that callback function exits in the case where
++        // it is looping on buffer full condition in obtainBuffer().
++        // Otherwise the callback thread will never exit.
++        //stop();
++        SLOGD("Enter AudioPCMxWay::~AudioPCMxWay(),mAudioPCMxWayThread = %p", mAudioPCMxWayThread.get());
++
++        if (mAudioPCMxWayThread != 0)
++        {
++            mAudioPCMxWayThread->requestExitAndWait();
++            //mAudioPCMxWayThread->requestExit();
++            mAudioPCMxWayThread.clear();
++        }
++
++        IPCThreadState::self()->flushCommands();
++    }
++
++    SLOGD("Exit AudioPCMxWay::~AudioPCMxWay()");
++}
++
++status_t AudioPCMxWay::set(int streamType, callback_t cbf, void *user)
++{
++
++    if (cbf != 0)
++    {
++        mAudioPCMxWayThread = new AudioPCMxWayThread(*this);
++
++        if (mAudioPCMxWayThread == 0)
++        {
++            SLOGE("Could not create callback thread");
++            return NO_INIT;
++        }
++    }
++
++    mStatus = NO_ERROR;
++
++    mStreamType = streamType;
++    mCbf = cbf;
++    mUserData = user;
++    //mActive = 0;
++
++    return NO_ERROR;
++}
++
++status_t AudioPCMxWay::initCheck() const
++{
++    return mStatus;
++}
++
++// -------------------------------------------------------------------------
++
++// -------------------------------------------------------------------------
++void AudioPCMxWay::start()
++{
++    sp<AudioPCMxWayThread> t = mAudioPCMxWayThread;
++
++    if (mStarted)
++    {
++        return;
++    }
++
++    mStarted = true;
++
++    SLOGV("start %p", this);
++
++    if (t != 0)
++    {
++        if (t->exitPending())
++        {
++            if (t->requestExitAndWait() == WOULD_BLOCK)
++            {
++                SLOGE("AudioTrack::start called from thread");
++                return;
++            }
++        }
++
++        t->mLock.lock();
++    }
++
++
++    {
++        if (t != 0)
++        {
++            t->run("AudioPCMxWayThread", THREAD_PRIORITY_AUDIO_CLIENT);
++        }
++        else
++        {
++            setpriority(PRIO_PROCESS, 0, THREAD_PRIORITY_AUDIO_CLIENT);
++        }
++
++        if (mStreamType == PCMXWAY_OUTPUT)
++        {
++            AudioSystem::xWayPlay_Start(8000);
++        }
++        else
++        {
++            AudioSystem::xWayRec_Start(8000);
++        }
++
++    }
++
++    if (t != 0)
++    {
++        t->mLock.unlock();
++    }
++}
++
++void AudioPCMxWay::stop()
++{
++    sp<AudioPCMxWayThread> t = mAudioPCMxWayThread;
++
++    mStarted = false;
++
++    SLOGD("AudioPCMxWay::stop()");
++
++    if (t != 0)
++    {
++        t->mLock.lock();
++    }
++
++    {
++
++        if (t != 0)
++        {
++            t->requestExit();
++        }
++        else
++        {
++            setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_NORMAL);
++        }
++
++        if (mStreamType == PCMXWAY_OUTPUT)
++        {
++            AudioSystem::xWayPlay_Stop();
++        }
++        else
++        {
++            AudioSystem::xWayRec_Stop();
++        }
++    }
++
++    if (t != 0)
++    {
++        t->mLock.unlock();
++    }
++}
++
++// -------------------------------------------------------------------------
++
++ssize_t AudioPCMxWay::write(const void *buffer, size_t userSize)
++{
++
++    if (ssize_t(userSize) < 0)
++    {
++        // sanity-check. user is most-likely passing an error code.
++        SLOGE("AudioPCMxWay::write(buffer=%p, size=%u (%d)",
++               buffer, userSize, userSize);
++        return BAD_VALUE;
++    }
++
++    //SXLOGV("write %p: %d bytes, mActive=%d", this, userSize, mActive);
++
++    ssize_t written = 0;
++    int8_t *src = (int8_t *)buffer;
++
++    int tryCount = 0;
++
++    do
++    {
++
++        size_t toWrite;
++
++        toWrite = AudioSystem::xWayPlay_Write(src, userSize);
++        src += toWrite;
++
++        if (toWrite == 0)
++        {
++            usleep(5000);
++        }
++
++        tryCount++;
++
++        if (tryCount > 5)
++        {
++            break;
++        }
++
++        userSize -= toWrite;
++        written += toWrite;
++
++    }
++    while (userSize && mStarted);
++
++    return written;
++}
++
++
++ssize_t AudioPCMxWay::read(void *buffer, size_t userSize)
++{
++    ssize_t read = 0;
++    int8_t *dst = static_cast<int8_t *>(buffer);
++
++    if (ssize_t(userSize) < 0)
++    {
++        // sanity-check. user is most-likely passing an error code.
++        SLOGE("AudioRecord::read(buffer=%p, size=%u (%d)",
++               buffer, userSize, userSize);
++        return BAD_VALUE;
++    }
++
++    size_t bytesRead = 0;
++    int tryCount = 0;
++
++    do
++    {
++
++        bytesRead = AudioSystem::xWayRec_Read(dst, userSize);
++
++        if (bytesRead == 0)
++        {
++            usleep(5000);
++        }
++
++        tryCount++;
++
++        if (tryCount > 5)
++        {
++            break;
++        }
++
++        dst += bytesRead;
++        userSize -= bytesRead;
++        read += bytesRead;
++
++    }
++    while (userSize && mStarted);
++
++    return read;
++}
++
++// -------------------------------------------------------------------------
++
++bool AudioPCMxWay::processAudioBuffer()
++{
++    Buffer audioBuffer;
++    size_t writtenSize;
++
++    if (mStreamType == PCMXWAY_INPUT)
++    {
++        return false;
++    }
++
++    do
++    {
++
++        size_t reqSize = 0;
++
++        if (!mStarted)
++        {
++            break;
++        }
++
++        reqSize = AudioSystem::xWayPlay_GetFreeBufferCount();
++
++        while (reqSize < 320)
++        {
++            usleep(WAIT_PERIOD_MS * 1000);
++
++            if (!mStarted)
++            {
++                return false;
++            }
++
++            reqSize =  AudioSystem::xWayPlay_GetFreeBufferCount();
++        }
++
++        sp<MemoryDealer>        mMemoryDealer;
++        sp<IMemory>             mCblkMemory;
++        mMemoryDealer = new MemoryDealer(1024 * 1024);
++
++        audioBuffer.size = AudioSystem::xWayPlay_GetFreeBufferCount();
++        mCblkMemory = mMemoryDealer->allocate(audioBuffer.size);
++
++        if (mCblkMemory != 0)
++        {
++            audioBuffer.raw  = (void *)mCblkMemory->pointer();
++        }
++
++        mCbf(EVENT_MORE_DATA, mUserData, &audioBuffer);
++        writtenSize = audioBuffer.size;
++        reqSize = AudioSystem::xWayPlay_GetFreeBufferCount();
++
++        // Sanity check on returned size
++        if (ssize_t(writtenSize) <= 0)
++        {
++            // The callback is done filling buffers
++            // Keep this thread going to handle timed events and
++            // still try to get more data in intervals of WAIT_PERIOD_MS
++            // but don't just loop and block the CPU, so wait
++            usleep(WAIT_PERIOD_MS * 1000);
++
++            if (!mStarted)
++            {
++                return false;
++            }
++        }
++
++        if (writtenSize > reqSize)
++        {
++            writtenSize = reqSize;
++        }
++
++        audioBuffer.size = writtenSize;
++
++        write(audioBuffer.raw, audioBuffer.size);
++
++    }
++    while (0);
++
++    return true;
++}
++
++
++// =========================================================================
++
++AudioPCMxWay::AudioPCMxWayThread::AudioPCMxWayThread(AudioPCMxWay &receiver)
++    : mReceiver(receiver)
++{
++}
++
++bool AudioPCMxWay::AudioPCMxWayThread::threadLoop()
++{
++    return mReceiver.processAudioBuffer();
++}
++
++status_t AudioPCMxWay::AudioPCMxWayThread::readyToRun()
++{
++    return NO_ERROR;
++}
++
++void AudioPCMxWay::AudioPCMxWayThread::onFirstRef()
++{
++}
++
++// =========================================================================
++
++}; // namespace android
+diff --git a/media/libmedia/AudioParameter.cpp b/media/libmedia/AudioParameter.cpp
+index 535f459..08c54b6 100644
+--- a/media/libmedia/AudioParameter.cpp
++++ b/media/libmedia/AudioParameter.cpp
+@@ -19,7 +19,11 @@
+ 
+ #include <utils/Log.h>
+ 
++#ifdef MTK_AUDIO
++#include <hardware/audio_mtk.h>
++#else
+ #include <hardware/audio.h>
++#endif
+ #include <media/AudioParameter.h>
+ 
+ namespace android {
+diff --git a/media/libmedia/AudioSystem.cpp b/media/libmedia/AudioSystem.cpp
+index ce9930b..3636a31 100644
+--- a/media/libmedia/AudioSystem.cpp
++++ b/media/libmedia/AudioSystem.cpp
+@@ -1210,6 +1210,192 @@ int AudioSystem::AudioPolicyServiceClient::removeAudioPortCallback(
+     return mAudioPortCallbacks.size();
+ }
+ 
++#ifdef MTK_HARDWARE
++int AudioSystem::xWayPlay_Start(int sample_rate)
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayPlay_Start(sample_rate);
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayPlay_Stop()
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayPlay_Stop();
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayPlay_Write(void *buffer, int size_bytes)
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayPlay_Write(buffer,size_bytes);
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayPlay_GetFreeBufferCount()
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayPlay_GetFreeBufferCount();
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayRec_Start(int sample_rate)
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayRec_Start(sample_rate);
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayRec_Stop()
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayRec_Stop();
++#endif
++    return 0;
++}
++
++int AudioSystem::xWayRec_Read(void *buffer, int size_bytes)
++{
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    return af->xWayRec_Read(buffer,size_bytes);
++#endif
++    return 0;
++}
++
++int AudioSystem::ReadRefFromRing(void*buf, uint32_t datasz,void* DLtime)
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++
++        const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++        if (af == 0) return PERMISSION_DENIED;
++        ALOGV("af->ReadRefFromRing");
++        return af->ReadRefFromRing(buf, datasz, DLtime);
++#else
++        return 0;
++#endif
++}
++int AudioSystem::GetVoiceUnlockULTime(void* DLtime)
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++        const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++        if (af == 0) return PERMISSION_DENIED;
++        ALOGV("af->GetVoiceUnlockULTime");
++        return af->GetVoiceUnlockULTime( DLtime);
++#else
++        return 0;
++#endif
++}
++int AudioSystem::SetVoiceUnlockSRC(uint outSR, uint outChannel)
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return PERMISSION_DENIED;
++    ALOGD("af->SetVoiceUnlockSRC");
++    return af->SetVoiceUnlockSRC(outSR, outChannel);
++#else
++    return 0;
++#endif
++}
++bool AudioSystem::startVoiceUnlockDL()
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0)
++    {
++        ALOGE("startVoiceUnlockDL::PERMISSION_DENIED");
++        return PERMISSION_DENIED;
++    }
++    ALOGD("af->startVoiceUnlockDL");
++    return af->startVoiceUnlockDL();
++#else
++    return 0;
++#endif
++}
++bool AudioSystem:: stopVoiceUnlockDL()
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0)
++    {
++        ALOGE("stopVoiceUnlockDL::PERMISSION_DENIED");
++        return PERMISSION_DENIED;
++    }
++    ALOGD("af->stopVoiceUnlockDL");
++    return af->stopVoiceUnlockDL();
++#else
++    return 0;
++#endif
++}
++void AudioSystem::freeVoiceUnlockDLInstance()
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0) return ;
++    ALOGD("af->freeVoiceUnlockDLInstance");
++    return af->freeVoiceUnlockDLInstance();
++#else
++    return;
++#endif
++
++}
++int AudioSystem::GetVoiceUnlockDLLatency()
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++    if (af == 0)
++    {
++        ALOGE("GetVoiceUnlockDLLatency::PERMISSION_DENIED");
++        return PERMISSION_DENIED;
++    }
++    ALOGD("af->GetVoiceUnlockDLLatency");
++    return af->GetVoiceUnlockDLLatency();
++#else
++    return 0;
++#endif
++}
++ bool AudioSystem::getVoiceUnlockDLInstance()
++{
++//#ifndef ANDROID_DEFAULT_CODE
++#ifdef MTK_AUDIO
++     const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
++     if (af == 0)
++     {
++        ALOGE("getVoiceUnlockDLInstance::PERMISSION_DENIED");
++         return PERMISSION_DENIED;
++     }
++     ALOGD("af->getVoiceUnlockDLInstance");
++     return af->getVoiceUnlockDLInstance();
++#else
++     return 0;
++#endif
++}
++#endif // MTK_HARDWARE
+ 
+ void AudioSystem::AudioPolicyServiceClient::onAudioPortListUpdate()
+ {
+diff --git a/media/libmedia/AudioTrackCenter.cpp b/media/libmedia/AudioTrackCenter.cpp
+new file mode 100755
+index 0000000..e0a3f57
+--- /dev/null
++++ b/media/libmedia/AudioTrackCenter.cpp
+@@ -0,0 +1,369 @@
++
++#define LOG_TAG "AudioTrackCenter"
++#define MTK_LOG_ENABLE 1
++#include <media/stagefright/foundation/ADebug.h>
++#include <media/stagefright/foundation/ALooper.h>
++#include <cutils/log.h>
++#include <media/AudioTrackCenter.h>
++#include <media/AudioSystem.h>
++#include <system/audio.h>
++
++#define AUDIOFLINGER_BUFFERCOUNT 6
++
++namespace android {
++
++AudioTrackCenter::AudioTrackCenter()
++    : mAfFrameCount(0),
++      mAfSampleRate(0),
++      mTimeScaled(1.0)
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++      ,mSysTimeUs(0),
++      mRealTimeUs(0),
++      mDeltaUs(0.0)
++#endif
++{
++
++}
++
++AudioTrackCenter::~AudioTrackCenter() {
++}
++
++status_t AudioTrackCenter::init() {
++    audio_stream_type_t streamType = AUDIO_STREAM_DEFAULT;
++    if (!mAfFrameCount || !mAfSampleRate) {
++        if (AudioSystem::getOutputFrameCount(&mAfFrameCount, streamType) != NO_ERROR) {
++            SLOGE("AudioSystem::getOutputFrameCount Fail!!!");
++            return NO_INIT;
++        }
++        if (AudioSystem::getOutputSamplingRate(&mAfSampleRate, streamType) != NO_ERROR) {
++            SLOGE("AudioSystem::getOutputSamplingRate Fail!!!");
++            return NO_INIT;
++        }
++        SLOGD("init, mAfFrameCount = %d, mAfSampleRate = %d",mAfFrameCount, mAfSampleRate);
++    }
++
++    return OK;
++}
++
++status_t AudioTrackCenter::addTrack(intptr_t trackId, uint32_t frameCount, uint32_t sampleRate, void* trackPtr,  uint32_t afFrameCount, uint32_t afSampleRate, uint32_t framesFilled) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGD("%s, trackId:%p, frameCount:%d, sampleRate:%d, trackPtr:%p",__FUNCTION__,(void*)trackId, frameCount, sampleRate, trackPtr);
++
++    //if (init() != OK) return NO_INIT;
++    mAfSampleRate = afSampleRate;
++         mAfFrameCount = afFrameCount;
++    ALOGD("addTrack: trackId = %p, mAfSampleRate = %d, sampleRate = %d, AfFrameCount = %d , mAfSampleRate = %d, frameCount = %d, framesFilled = %d",
++            (void*)trackId, mAfSampleRate, sampleRate, mAfFrameCount, mAfSampleRate, frameCount, framesFilled);
++    ssize_t index = mTrackList.indexOfKey(trackId);
++
++    if (index >= 0) {
++        SLOGW("trackId: %p has existed!!!", (void*)trackId);
++        //return INVALID_OPERATION;
++    }
++
++    List<TrackMaps>::iterator it = mTrackMaps.begin();
++    bool newTrack = true;
++    int64_t framePlayed = 0;
++    while(it != mTrackMaps.end()) {
++        if ((*it).trackPtr == trackPtr ) {
++            ssize_t index = mTrackList.indexOfKey((*it).trackId);
++            if (index >= 0) {
++                ALOGD("%s, update track info from trackId:%p to trackId:%p", __FUNCTION__, (void*)(*it).trackId, (void*)trackId);
++                framePlayed = framesFilled;
++                mTrackList.removeItemsAt(index);
++
++                TrackMaps *maps = &*it;
++                maps->trackId = trackId;
++                newTrack = false;
++            }
++            break;
++        }
++        ++it;
++    }
++
++    struct TrackInfo info;
++    info.server = 0;
++    info.frameCount = frameCount;
++    info.framePlayed = framePlayed;
++    info.afFrameCount = mAfSampleRate ? (sampleRate*mAfFrameCount)/mAfSampleRate : frameCount/AUDIOFLINGER_BUFFERCOUNT;
++    info.sampleRate = sampleRate;
++    info.middleServer = 0;
++    info.active = true;
++    info.ts = ALooper::GetNowUs();
++    mTrackList.add(trackId, info);
++
++    if (newTrack) {
++        struct TrackMaps maps;
++        maps.trackId  = trackId;
++        maps.trackPtr = trackPtr;
++        maps.sinkPtr  = NULL;
++        mTrackMaps.push_back(maps);
++    }
++    ALOGD("addTrack: trackId, info.server, info.framePlayed, info.ts, %p, %d, %lld, %lld",
++            (void*)trackId, info.server, info.framePlayed, info.ts);
++    return OK;
++}
++
++status_t AudioTrackCenter::removeTrack(void* trackPtr) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGD("%s, trackPtr:%p",__FUNCTION__, trackPtr);
++
++    List<TrackMaps>::iterator it = mTrackMaps.begin();
++    while(it != mTrackMaps.end()) {
++        if ((*it).trackPtr == trackPtr ) {
++            ssize_t index = mTrackList.indexOfKey((*it).trackId);
++            if (index < 0) {
++                return UNKNOWN_ERROR;
++            }
++            mTrackList.removeItemsAt(index);
++            mTrackMaps.erase(it);
++            break;
++        }
++        ++it;
++    }
++
++    return OK;
++
++}
++
++status_t AudioTrackCenter::updateTrackMaps(void* trackPtr, void* sinkPtr) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGD("%s, trackPtr:%p, sinkPtr:%p",__FUNCTION__, trackPtr, sinkPtr);
++
++    List<TrackMaps>::iterator it = mTrackMaps.begin();
++    while (it != mTrackMaps.end()) {
++        if (it->trackPtr == trackPtr) {
++            TrackMaps *maps = &*it;
++            maps->sinkPtr = sinkPtr;
++            return OK;
++        }
++        ++it;
++    }
++
++    return UNKNOWN_ERROR;
++}
++
++status_t AudioTrackCenter::updateServer(intptr_t trackId, uint32_t server, bool restore) {
++    Mutex::Autolock autoLock(mLock);
++    #if defined(CONFIG_MT_ENG_BUILD)
++    ALOGV("%s, trackId: %p, server: %d", __FUNCTION__, (void*)trackId, server);
++    #endif
++    ssize_t index = mTrackList.indexOfKey(trackId);
++    if (index < 0) {
++        return UNKNOWN_ERROR;
++    }
++
++    struct TrackInfo &info = mTrackList.editValueFor(trackId);
++
++    if (!info.active) {
++        SLOGV("%s, trackId:%p, active = %d",__FUNCTION__, (void*)trackId, info.active);
++        return OK;
++    }
++
++    uint32_t s;
++    s = (server > info.server) ? (server - info.server) : 0;
++
++    if (s && info.middleServer && s < info.afFrameCount) {
++        info.middleServer  = server;
++#if defined(CONFIG_MT_ENG_BUILD)
++        ALOGV("updateServer: s = %d < info.afFrameCount = %d, info.middleServer = %d, return!",
++                s, info.afFrameCount, info.middleServer);
++#endif
++        // For handling buffer wrap around
++        return OK;
++    }
++    /// M: ALPS02445917: TODO: Update info when first server updating
++    if (!restore && info.server) {
++        info.framePlayed = info.framePlayed + s;
++        info.ts = ALooper::GetNowUs();
++    }
++
++    info.server = server;
++#if defined(CONFIG_MT_ENG_BUILD)
++    ALOGV("updateServer: trackId, info.server, info.framePlayed, info.ts, %p, %d, %lld, %lld",
++            (void*)trackId, info.server, info.framePlayed, info.ts);
++#endif
++    info.middleServer  = server;
++
++    return OK;
++}
++
++intptr_t AudioTrackCenter::getTrackId(void* trackPtr, void* sinkPtr) {
++    Mutex::Autolock autoLock(mLock);
++    #if defined(CONFIG_MT_ENG_BUILD)
++    SLOGV("%s, trackPtr:%p, sinkPtr:%p",__FUNCTION__, trackPtr, sinkPtr);
++    #endif
++    List<TrackMaps>::iterator it = mTrackMaps.begin();
++    while (it != mTrackMaps.end()) {
++        if ((trackPtr && it->trackPtr == trackPtr) || (sinkPtr && it->sinkPtr == sinkPtr)) {
++#if defined(CONFIG_MT_ENG_BUILD)
++            SLOGV("%s, return trackId:%p",__FUNCTION__, (void*)it->trackId);
++#endif
++            return it->trackId;
++        }
++        ++it;
++    }
++    #if defined(CONFIG_MT_ENG_BUILD)
++    SLOGV("%s, no valid trackId!!",__FUNCTION__);
++    #endif
++    return 0;
++}
++
++status_t AudioTrackCenter::getRealTimePosition(intptr_t trackId, int64_t *position) {
++    Mutex::Autolock autoLock(mLock);
++
++        #if defined(CONFIG_MT_ENG_BUILD)
++    SLOGV("%s, trackId:%p",__FUNCTION__, (void*)trackId);
++        #endif
++    ssize_t index = mTrackList.indexOfKey(trackId);
++    if (index < 0) {
++        return UNKNOWN_ERROR;
++    }
++
++    const struct TrackInfo info = mTrackList.valueFor(trackId);
++    int64_t delayUs = ALooper::GetNowUs() - info.ts;
++    delayUs = delayUs/mTimeScaled;
++    *position = info.framePlayed;
++
++    if (!info.framePlayed) {
++        SLOGV("trackId = %p, server = %d, framePlayed = %lld", (void*)trackId, info.server, info.framePlayed);
++        return OK;
++    }
++
++    if (info.server) {
++        uint32_t deltaFrames = (uint32_t)((delayUs*info.sampleRate)/1000000);
++        if (deltaFrames > info.frameCount) {
++            deltaFrames = info.frameCount;
++        }
++
++        if (!info.active) {
++            SLOGV("%s, trackId = %p, track is not active , set deltaFrames to 0",__FUNCTION__, (void*)trackId);
++            deltaFrames = 0;
++        }
++        *position += deltaFrames;
++    }
++
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++    SLOGD("trackId = %p, realTimeUs and sysTimeUs distance: %8.3f", (void*)trackId, countDeltaUs(((int64_t)(*position)*1000000)/info.sampleRate));
++#endif
++#if defined(CONFIG_MT_ENG_BUILD)
++    ALOGD("getRealTimePosition: trackId, server, framePlayed, delayUs, *position = %p, %d, %lld, %lld, %lld",
++            (void*)trackId, info.server, info.framePlayed, delayUs, *position);
++#endif
++    return OK;
++}
++
++status_t AudioTrackCenter::setTrackActive(intptr_t trackId, bool active) {
++    Mutex::Autolock autoLock(mLock);
++    ALOGD("%s, trackId: %p, active: %d",__FUNCTION__, (void*)trackId, active);
++    ssize_t index = mTrackList.indexOfKey(trackId);
++    if (index < 0) {
++        return UNKNOWN_ERROR;
++    }
++
++    struct TrackInfo &info = mTrackList.editValueFor(trackId);
++
++    info.active = active;
++    // Update time stamp after pause/resume
++    //Otherwise AudioTrack returns old system time which it get before pause
++    info.ts = ALooper::GetNowUs();
++    return OK;
++}
++status_t AudioTrackCenter::setTimeStretch(float timeScaled) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGV("%s, timeScaled:%f",__FUNCTION__, timeScaled);
++
++    mTimeScaled = timeScaled;
++    return OK;
++}
++
++status_t AudioTrackCenter::setTimeStretch(uint32_t timeScaled) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGV("%s, timeScaled:%d",__FUNCTION__, timeScaled);
++
++    if (timeScaled != 1 && timeScaled != 2 && timeScaled != 4) {
++        return BAD_VALUE;
++    }
++
++    mTimeScaled = (float)timeScaled;
++
++    return OK;
++}
++status_t AudioTrackCenter::reset_flush(intptr_t trackId) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGV("%s, trackId:%p",__FUNCTION__, (void*)trackId);
++
++    ssize_t index = mTrackList.indexOfKey(trackId);
++    if (index < 0) {
++        return UNKNOWN_ERROR;
++    }
++
++    struct TrackInfo &info = mTrackList.editValueFor(trackId);
++
++    info.server = 0;
++    info.middleServer = 0;
++    info.ts = ALooper::GetNowUs();
++    info.framePlayed = 0;
++
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++    mSysTimeUs = 0;
++    mRealTimeUs = 0;
++    mDeltaUs = 0;
++#endif
++
++    return OK;
++}
++
++status_t AudioTrackCenter::reset(intptr_t trackId) {
++    Mutex::Autolock autoLock(mLock);
++
++    SLOGV("%s, trackId:%p",__FUNCTION__, (void*)trackId);
++
++    ssize_t index = mTrackList.indexOfKey(trackId);
++    if (index < 0) {
++        return UNKNOWN_ERROR;
++    }
++
++    struct TrackInfo &info = mTrackList.editValueFor(trackId);
++
++    info.server = 0;
++    info.middleServer = 0;
++    info.ts = ALooper::GetNowUs();
++
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++    mSysTimeUs = 0;
++    mRealTimeUs = 0;
++    mDeltaUs = 0;
++#endif
++
++    return OK;
++}
++
++#ifdef AUDIO_TRACK_CENTER_DEBUG
++float AudioTrackCenter::countDeltaUs(int64_t realTimeUs) {
++    int64_t deltaRealUs = 0;
++    int64_t delatSysUs = 0 ;
++
++    if (!realTimeUs) return 0;
++
++    if (mSysTimeUs) {
++        deltaRealUs = realTimeUs - mRealTimeUs;
++        delatSysUs = ALooper::GetNowUs() -    mSysTimeUs;
++    }
++    mSysTimeUs = ALooper::GetNowUs();
++    mRealTimeUs = realTimeUs;
++
++    mDeltaUs = (float)(deltaRealUs - delatSysUs)/1000.00;
++
++    return mDeltaUs;
++
++}
++#endif
++
++}
+diff --git a/media/libmedia/IATVCtrlClient.cpp b/media/libmedia/IATVCtrlClient.cpp
+new file mode 100644
+index 0000000..e53e2d4
+--- /dev/null
++++ b/media/libmedia/IATVCtrlClient.cpp
+@@ -0,0 +1,269 @@
++
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   IATVCtrlClient.cpp
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Client Interface
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 11 30 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 26 2011 changqing.yan
++ * NULL
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++#define LOG_TAG "IATVCtrlClient"
++#define MTK_LOG_ENABLE 1
++#include <utils/Log.h>
++#include <stdint.h>
++#include <sys/types.h>
++#include <binder/Parcel.h>
++#include <media/IATVCtrlClient.h>
++#include <cutils/log.h>
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++namespace android
++{
++
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++enum
++{
++    AUTO_SCAN_CB = IBinder::FIRST_CALL_TRANSACTION,
++    FULL_SCAN_CB,
++    SCAN_FINISH_CB,
++    AUDIO_FORMAT_CB,
++    SHUTDOWN_CB,
++    NOTIFY
++};
++
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++class BpATVCtrlClient : public BpInterface<IATVCtrlClient>
++{
++public:
++    BpATVCtrlClient(const sp<IBinder>& impl)
++        : BpInterface<IATVCtrlClient>(impl)
++    {
++    }
++
++    virtual void AutoScan_CB(int precent, int ch, int chnum, void *ptr, int len)
++    {
++        Parcel data, reply;
++        SLOGD("AutoScan_CB precent=%d, ch=%d, chnum=%d, ptr=%p, len=%d", precent, ch, chnum, ptr, len);
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(precent);
++        data.writeInt32(ch);
++        data.writeInt32(chnum);
++
++        data.writeInt32(len);
++        data.write(ptr, len);
++        remote()->transact(AUTO_SCAN_CB, data, &reply);
++        reply.read(ptr, len);
++    }
++    virtual void FullScan_CB(int precent, int freq, int freq_start, int freq_end)
++    {
++        Parcel data, reply;
++        SLOGD("FullScan_CB precent=%d, freq=%d, freq_start=%d, freq_end=%d", precent, freq, freq_start, freq_end);
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(precent);
++        data.writeInt32(freq);
++        data.writeInt32(freq_start);
++        data.writeInt32(freq_end);
++        remote()->transact(FULL_SCAN_CB, data, &reply);
++    }
++    virtual void ScanFinish_CB(int chnum)
++    {
++        Parcel data, reply;
++        SLOGD("ScanFinish_CB chnum=%d", chnum);
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(chnum);
++        remote()->transact(SCAN_FINISH_CB, data, &reply);
++    }
++    virtual void AudioFmt_CB(int format)
++    {
++        Parcel data, reply;
++        SLOGD("AudioFmt_CB format=%d", format);
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(format);
++        remote()->transact(AUDIO_FORMAT_CB, data, &reply);
++    }
++    virtual void Shutdown_CB(int source)
++    {
++        Parcel data, reply;
++        SLOGD("Shutdown_CB format=%d", source);
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(source);
++        remote()->transact(SHUTDOWN_CB, data, &reply);
++    }
++    virtual void notify(int msg, int ext1, int ext2)
++    {
++        Parcel data, reply;
++        data.writeInterfaceToken(IATVCtrlClient::getInterfaceDescriptor());
++        data.writeInt32(msg);
++        data.writeInt32(ext1);
++        data.writeInt32(ext2);
++        remote()->transact(NOTIFY, data, &reply);
++    }
++
++};
++
++IMPLEMENT_META_INTERFACE(ATVCtrlClient, "android.media.IATVCtrlClient");
++
++// ----------------------------------------------------------------------
++
++/*#define CHECK_INTERFACE(interface, data, reply) \
++        do { if (!data.enforceInterface(interface::getInterfaceDescriptor())) { \
++            LOGW("Call incorrectly routed to " #interface); \
++            return PERMISSION_DENIED; \
++        } } while (0)*/
++
++status_t BnATVCtrlClient::onTransact(
++    uint32_t code, const Parcel &data, Parcel *reply, uint32_t flags)
++{
++    switch (code)
++    {
++        case AUTO_SCAN_CB:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int precent = data.readInt32();
++            int ch = data.readInt32();
++            int chnum = data.readInt32();
++
++            int len = data.readInt32();
++            void *ptr = malloc(len);
++            data.read(ptr, len);
++            SLOGD("onTransact:AUTO_SCAN_CB precent=%d, ch=%d, chnum=%d, ptr=%p, len=%d", precent, ch, chnum, ptr, len);
++            AutoScan_CB(precent, ch, chnum, ptr, len);
++            reply->write(ptr, len);
++            free(ptr);
++
++            return NO_ERROR;
++        }
++        break;
++
++        case FULL_SCAN_CB:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int precent = data.readInt32();
++            int freq = data.readInt32();
++            int freq_start = data.readInt32();
++            int freq_end = data.readInt32();
++            SLOGD("onTransact:FULL_SCAN_CB precent=%d, freq=%d, freq_start=%d, freq_end=%d", precent, freq, freq_start, freq_end);
++            FullScan_CB(precent, freq, freq_start, freq_end);
++            return NO_ERROR;
++        }
++        break;
++
++        case SCAN_FINISH_CB:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int chnum = data.readInt32();
++            SLOGD("onTransact:SCAN_FINISH_CB chnum=%d", chnum);
++            ScanFinish_CB(chnum);
++            return NO_ERROR;
++        }
++        break;
++
++        case AUDIO_FORMAT_CB:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int format = data.readInt32();
++            SLOGD("onTransact:AUDIO_FORMAT_CB format=%d", format);
++            AudioFmt_CB(format);
++            return NO_ERROR;
++        }
++        break;
++
++        case SHUTDOWN_CB:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int source = data.readInt32();
++            SLOGD("onTransact:SHUTDOWN_CB source=%d", source);
++            Shutdown_CB(source);
++            return NO_ERROR;
++        }
++        break;
++
++        case NOTIFY:
++        {
++            CHECK_INTERFACE(IATVCtrlClient, data, reply);
++            int msg = data.readInt32();
++            int ext1 = data.readInt32();
++            int ext2 = data.readInt32();
++            notify(msg, ext1, ext2);
++            return NO_ERROR;
++        }
++        break;
++
++        default:
++            return BBinder::onTransact(code, data, reply, flags);
++    }
++}
++
++// ----------------------------------------------------------------------------
++
++}; // namespace android
+diff --git a/media/libmedia/IATVCtrlService.cpp b/media/libmedia/IATVCtrlService.cpp
+new file mode 100644
+index 0000000..4d66e6c
+--- /dev/null
++++ b/media/libmedia/IATVCtrlService.cpp
+@@ -0,0 +1,829 @@
++/*******************************************************************************
++ *
++ * Filename:
++ * ---------
++ *   IATVCtrlService.cpp
++ *
++ * Project:
++ * --------
++ *   Android
++ *
++ * Description:
++ * ------------
++ *   ATV Control Service Interface
++ *
++ * Author:
++ * -------
++ *   Stan Huang (mtk01728)
++ *
++ *------------------------------------------------------------------------------
++ * $Revision$
++ * $Modtime:$
++ * $Log:$
++ *
++ * 10 27 2012 ning.feng
++ * [ALPS00367096] [Need Patch] [Volunteer Patch]mt6589 matv/libstagefright enhancement
++ * .
++ *
++ * 07 19 2012 ning.feng
++ * [ALPS00315896] [Need Patch] [Volunteer Patch]JB migration
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 17 2012 ning.feng
++ * NULL
++ * .
++ *
++ * 07 13 2012 changqing.yan
++ * NULL
++ * .
++ *
++ * 11 30 2011 changqing.yan
++ * [ALPS00098550] [Need Patch] [Volunteer Patch]migration
++ * .
++ *
++ * 11 26 2011 changqing.yan
++ * NULL
++ * .
++ *
++ * 01 25 2011 changqing.yan
++ * [ALPS00030050] [Need Patch] [Volunteer Patch]
++ * .
++ *
++ *
++ *******************************************************************************/
++
++/*****************************************************************************
++*                     C O M P I L E R   F L A G S
++******************************************************************************
++*/
++
++/*****************************************************************************
++*                E X T E R N A L   R E F E R E N C E S
++******************************************************************************
++*/
++
++#define LOG_TAG "IATVCtrlService"
++#define MTK_LOG_ENABLE 1
++#include <utils/Log.h>
++#include <stdint.h>
++#include <sys/types.h>
++#include <binder/Parcel.h>
++#include <media/IATVCtrlService.h>
++#include <cutils/log.h>
++/*****************************************************************************
++*                          C O N S T A N T S
++******************************************************************************
++*/
++
++
++namespace android
++{
++
++
++/*****************************************************************************
++*                         D A T A   T Y P E S
++******************************************************************************
++*/
++// Set the transation message
++enum
++{
++    ATV_INIT = IBinder::FIRST_CALL_TRANSACTION,
++    ATV_PS_INIT,
++    ATV_SET_PARAMETERB,
++    ATV_SUSPEND,
++    ATV_SHUTDOWN,
++    ATV_CH_SCAN,
++    ATV_CH_SCAN_STOP,
++    ATV_GET_CH_TABLE,
++    ATV_SET_CH_TABLE,
++    ATV_CLEAR_CH_TABLE,
++    ATV_CHANGE_CH,
++    ATV_SET_COUNTRY,
++    ATV_SET_TPARAM,
++    ATV_AUDIO_PLAY,
++    ATV_AUDIO_STOP,
++    ATV_AUDIO_GET_FORMAT,
++    ATV_AUDIO_SET_FORMAT,
++    ATV_GET_SOUND_SYSTEM,
++    ATV_ADJUST,
++    ATV_GET_CHIPDEP,  // get signal SNR
++    ATV_SET_CHIPDEP,  // set signal SNR
++    ATV_REG_CALLBACK,
++    REGISTER_CLIENT,
++    REGISTER_CLIENT_FM,
++    ATV_CLI,
++    FM_POWERUP,
++    FM_POWERDOWN,
++    FM_GETRSSI,
++    FM_TUNE,
++    FM_SEEK,
++    FM_SCAN,
++    FM_MUTE,
++    FM_GETCHIPID,
++    FM_ISFMPOWERUP
++};
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++class BpATVCtrlService : public BpInterface<IATVCtrlService>
++{
++public:
++    BpATVCtrlService(const sp<IBinder>& impl)
++        : BpInterface<IATVCtrlService>(impl)
++    {
++    }
++    virtual int ATVCS_matv_init()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_init");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_INIT, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_ps_init(int on)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_ps_init:%d", on);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(on);
++        remote()->transact(ATV_PS_INIT, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_set_parameterb(int in)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_set_parameterb:%d", in);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(in);
++        remote()->transact(ATV_SET_PARAMETERB, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_suspend(int on)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_suspend on:%d", on);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(on);
++        remote()->transact(ATV_SUSPEND, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_shutdown()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_shutdown");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_SHUTDOWN, data, &reply);
++        return reply.readInt32();
++    }
++    virtual void ATVCS_matv_chscan(int mode)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_chscan mode:%d", mode);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(mode);
++        remote()->transact(ATV_CH_SCAN, data, &reply);
++    }
++    virtual void ATVCS_matv_chscan_stop()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_chscan_stop");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_CH_SCAN_STOP, data, &reply);
++    }
++    virtual int ATVCS_matv_get_chtable(int ch, void *entry, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_get_chtable ch=%d, entry=%p, len=%d", ch, entry, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(ch);
++        data.writeInt32(len);
++        data.write(entry, len);
++        remote()->transact(ATV_GET_CH_TABLE, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(entry, len);
++        return ret;
++    }
++    virtual int ATVCS_matv_set_chtable(int ch, void *entry, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_set_chtable ch=%d, entry=%p, len=%d", ch, entry, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(ch);
++        data.writeInt32(len);
++        data.write(entry, len);
++        remote()->transact(ATV_SET_CH_TABLE, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(entry, len);
++        return ret;
++    }
++    virtual int ATVCS_matv_clear_chtable()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_clear_chtable");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_CLEAR_CH_TABLE, data, &reply);
++        return reply.readInt32();
++    }
++    virtual void ATVCS_matv_change_channel(int ch)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_change_channel ch=%d", ch);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(ch);
++        remote()->transact(ATV_CHANGE_CH, data, &reply);
++    }
++    virtual void ATVCS_matv_set_country(int country)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_set_country country=%d", country);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(country);
++        remote()->transact(ATV_SET_COUNTRY, data, &reply);
++    }
++    virtual void ATVCS_matv_set_tparam(int mode)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_set_tparam mode=%d", mode);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(mode);
++        remote()->transact(ATV_SET_TPARAM, data, &reply);
++    }
++    virtual void ATVCS_matv_audio_play()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_audio_play");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_AUDIO_PLAY, data, &reply);
++    }
++    virtual void ATVCS_matv_audio_stop()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_audio_stop");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_AUDIO_STOP, data, &reply);
++    }
++    virtual int ATVCS_matv_audio_get_format()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_audio_get_format");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_AUDIO_GET_FORMAT, data, &reply);
++        return reply.readInt32();
++    }
++    virtual void ATVCS_matv_audio_set_format(int val)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_audio_set_format val=%d", val);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(val);
++        remote()->transact(ATV_AUDIO_SET_FORMAT, data, &reply);
++    }
++    virtual int ATVCS_matv_audio_get_sound_system()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_audio_get_sound_system");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_GET_SOUND_SYSTEM, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_adjust(int item, int val)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_adjust item=%d, val=%d", item, val);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(item);
++        data.writeInt32(val);
++        remote()->transact(ATV_ADJUST, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_get_chipdep(int item)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_get_chipdep item=%d", item);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(item);
++        remote()->transact(ATV_GET_CHIPDEP, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_matv_set_chipdep(int item, int val)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_set_chipdep item=%d, val=%d", item, val);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(item);
++        data.writeInt32(val);
++        remote()->transact(ATV_SET_CHIPDEP, data, &reply);
++        return reply.readInt32();
++    }
++    virtual void ATVCS_matv_register_callback()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_matv_register_callback");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(ATV_REG_CALLBACK, data, &reply);
++    }
++    virtual void registerClient(const sp<IATVCtrlClient>& client)
++    {
++        Parcel data, reply;
++        SLOGD("registerClient");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeStrongBinder(IInterface::asBinder(client));
++        remote()->transact(REGISTER_CLIENT, data, &reply);
++    }
++    virtual void registerClient_FM(const sp<IATVCtrlClient>& client)
++    {
++        Parcel data, reply;
++        SLOGD("registerClient");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeStrongBinder(IInterface::asBinder(client));
++        remote()->transact(REGISTER_CLIENT_FM, data, &reply);
++    }
++    virtual void CLI(char input)
++    {
++        Parcel data, reply;
++        SLOGD("CLI");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(input);
++        remote()->transact(ATV_CLI, data, &reply);
++    }
++    virtual int ATVCS_fm_powerup(void *parm, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_powerup parm=%p, len=%d", parm, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(len);
++        data.write(parm, len);
++        remote()->transact(FM_POWERUP, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(parm, len);
++        return ret;
++    }
++    virtual int ATVCS_fm_powerdown()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_powerdown");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(FM_POWERDOWN, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_fm_getrssi()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_getrssi");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(FM_GETRSSI, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_fm_tune(void *parm, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_tune parm=%p, len=%d", parm, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(len);
++        data.write(parm, len);
++        remote()->transact(FM_TUNE, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(parm, len);
++        return ret;
++    }
++    virtual int ATVCS_fm_seek(void *parm, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_seek parm=%p, len=%d", parm, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(len);
++        data.write(parm, len);
++        remote()->transact(FM_SEEK, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(parm, len);
++        return ret;
++    }
++    virtual int ATVCS_fm_scan(void *parm, int len)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_scan parm=%p, len=%d", parm, len);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(len);
++        data.write(parm, len);
++        remote()->transact(FM_SCAN, data, &reply);
++        int ret = reply.readInt32();
++        reply.read(parm, len);
++        return ret;
++    }
++    virtual int ATVCS_fm_mute(int val)
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_mute val=%d", val);
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        data.writeInt32(val);
++        remote()->transact(FM_MUTE, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_fm_getchipid()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_getchipid");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(FM_GETCHIPID, data, &reply);
++        return reply.readInt32();
++    }
++    virtual int ATVCS_fm_isFMPowerUp()
++    {
++        Parcel data, reply;
++        SLOGD("ATVCS_fm_isFMPowerUp");
++        data.writeInterfaceToken(IATVCtrlService::getInterfaceDescriptor());
++        remote()->transact(FM_ISFMPOWERUP, data, &reply);
++        return reply.readInt32();
++    }
++};
++
++IMPLEMENT_META_INTERFACE(ATVCtrlService, "android.media.IATVCtrlService");
++
++// ----------------------------------------------------------------------
++
++/*#define CHECK_INTERFACE(interface, data, reply) \
++        do { if (!data.enforceInterface(interface::getInterfaceDescriptor())) { \
++            LOGW("Call incorrectly routed to " #interface); \
++            return PERMISSION_DENIED; \
++        } } while (0)*/
++
++/*****************************************************************************
++*                        C L A S S   D E F I N I T I O N
++******************************************************************************
++*/
++
++status_t BnATVCtrlService::onTransact(
++    uint32_t code, const Parcel &data, Parcel *reply, uint32_t flags)
++{
++    switch (code)
++    {
++        case ATV_INIT:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_INIT ");
++            reply->writeInt32(ATVCS_matv_init());
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_PS_INIT:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int on = data.readInt32();
++            SLOGD("onTransact:ATV_PS_INIT(%d) ", on);
++            reply->writeInt32(ATVCS_matv_ps_init(on));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SET_PARAMETERB:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int in = data.readInt32();
++            SLOGD("onTransact:ATV_SET_PARAMETERB(%d) ", in);
++            reply->writeInt32(ATVCS_matv_set_parameterb(in));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SUSPEND:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int on = data.readInt32();
++            SLOGD("onTransact:ATV_SUSPEND(%d)", int(on));
++            reply->writeInt32(ATVCS_matv_suspend(on));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SHUTDOWN:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_SHUTDOWN");
++            reply->writeInt32(ATVCS_matv_shutdown());
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_CH_SCAN:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int mode = data.readInt32();
++            SLOGD("onTransact:ATV_CH_SCAN (%d)", int(mode));
++            ATVCS_matv_chscan(mode);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_CH_SCAN_STOP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_CH_SCAN_STOP ");
++            ATVCS_matv_chscan_stop();
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_GET_CH_TABLE:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int ch  = data.readInt32();
++            int len = data.readInt32();
++            void *entry = malloc(len);
++            data.read(entry, len);
++            SLOGD("onTransact:ATV_GET_CH_TABLE ");
++            reply->writeInt32(ATVCS_matv_get_chtable(ch, entry, len));
++            reply->write(entry, len);
++            free(entry);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SET_CH_TABLE:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int ch  = data.readInt32();
++            int len = data.readInt32();
++            void *entry = malloc(len);
++            data.read(entry, len);
++            SLOGD("onTransact:ATV_SET_CH_TABLE ");
++            reply->writeInt32(ATVCS_matv_set_chtable(ch, entry, len));
++            reply->write(entry, len);
++            free(entry);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_CLEAR_CH_TABLE:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_CLEAR_CH_TABLE ");
++            reply->writeInt32(ATVCS_matv_clear_chtable());
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_CHANGE_CH:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int ch = data.readInt32();
++            SLOGD("onTransact:ATV_CHANGE_CH (%d) ", ch);
++            ATVCS_matv_change_channel(ch);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SET_COUNTRY:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int country = data.readInt32();
++            SLOGD("onTransact:ATV_SET_COUNTRY (%d) ", country);
++            ATVCS_matv_set_country(country);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SET_TPARAM:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int mode = data.readInt32();
++            SLOGD("onTransact:ATV_SET_TPARAM (%d) ", mode);
++            ATVCS_matv_set_tparam(mode);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_AUDIO_PLAY:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_AUDIO_PLAY ");
++            ATVCS_matv_audio_play();
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_AUDIO_STOP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_AUDIO_STOP ");
++            ATVCS_matv_audio_stop();
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_AUDIO_GET_FORMAT:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_AUDIO_GET_FORMAT ");
++            reply->writeInt32(ATVCS_matv_audio_get_format());
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_AUDIO_SET_FORMAT:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int val = data.readInt32();
++            SLOGD("onTransact:ATV_AUDIO_SET_FORMAT (%d) ", val);
++            ATVCS_matv_audio_set_format(val);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_GET_SOUND_SYSTEM:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_GET_SOUND_SYSTEM ");
++            reply->writeInt32(ATVCS_matv_audio_get_sound_system());
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_ADJUST:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int item = data.readInt32();
++            int val  = data.readInt32();
++            SLOGD("onTransact:ATV_ADJUST (%d)(%d) ", item, val);
++            reply->writeInt32(ATVCS_matv_adjust(item, val));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_GET_CHIPDEP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int item = data.readInt32();
++            SLOGD("onTransact:ATV_GET_CHIPDEP (%d) ", item);
++            reply->writeInt32(ATVCS_matv_get_chipdep(item));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_SET_CHIPDEP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int item = data.readInt32();
++            int val = data.readInt32();
++            SLOGD("onTransact:ATV_SET_CHIPDEP (%d)(%d) ", item, val);
++            reply->writeInt32(ATVCS_matv_set_chipdep(item, val));
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_REG_CALLBACK:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:ATV_REG_CALLBACK ");
++            ATVCS_matv_register_callback();
++            return NO_ERROR;
++        }
++        break;
++
++        case REGISTER_CLIENT:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            sp<IATVCtrlClient> client = interface_cast<IATVCtrlClient>(data.readStrongBinder());
++            SLOGD("onTransact:REGISTER_CLIENT");
++            registerClient(client);
++            return NO_ERROR;
++        }
++        break;
++
++        case REGISTER_CLIENT_FM:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            sp<IATVCtrlClient> client = interface_cast<IATVCtrlClient>(data.readStrongBinder());
++            SLOGD("onTransact:REGISTER_CLIENT_FM");
++            registerClient_FM(client);
++            return NO_ERROR;
++        }
++        break;
++
++        case ATV_CLI:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int input = data.readInt32();
++            SLOGD("onTransact:ATV_CLI");
++            CLI(input);
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_POWERUP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int len = data.readInt32();
++            void *parm = malloc(len);
++            data.read(parm, len);
++            SLOGD("onTransact:FM_POWERUP ");
++            reply->writeInt32(ATVCS_fm_powerup(parm, len));
++            reply->write(parm, len);
++            free(parm);
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_POWERDOWN:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:FM_POWERDOWN ");
++            reply->writeInt32(ATVCS_fm_powerdown());
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_GETRSSI:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:FM_GETRSSI ");
++            reply->writeInt32(ATVCS_fm_getrssi());
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_TUNE:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int len = data.readInt32();
++            void *parm = malloc(len);
++            data.read(parm, len);
++            SLOGD("onTransact:FM_TUNE ");
++            reply->writeInt32(ATVCS_fm_tune(parm, len));
++            reply->write(parm, len);
++            free(parm);
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_SEEK:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int len = data.readInt32();
++            void *parm = malloc(len);
++            data.read(parm, len);
++            SLOGD("onTransact:FM_SEEK ");
++            reply->writeInt32(ATVCS_fm_seek(parm, len));
++            reply->write(parm, len);
++            free(parm);
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_SCAN:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int len = data.readInt32();
++            void *parm = malloc(len);
++            data.read(parm, len);
++            SLOGD("onTransact:FM_SCAN ");
++            reply->writeInt32(ATVCS_fm_scan(parm, len));
++            reply->write(parm, len);
++            free(parm);
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_MUTE:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            int val = data.readInt32();
++            SLOGD("onTransact:FM_MUTE (%d) ", val);
++            reply->writeInt32(ATVCS_fm_mute(val));
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_GETCHIPID:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:FM_GETCHIPID ");
++            reply->writeInt32(ATVCS_fm_getchipid());
++            return NO_ERROR;
++        }
++        break;
++
++        case FM_ISFMPOWERUP:
++        {
++            CHECK_INTERFACE(IATVCtrlService, data, reply);
++            SLOGD("onTransact:FM_ISFMPOWERUP ");
++            reply->writeInt32(ATVCS_fm_isFMPowerUp());
++            return NO_ERROR;
++        }
++        break;
++
++        default:
++            return BBinder::onTransact(code, data, reply, flags);
++    }
++}
++
++// ----------------------------------------------------------------------------
++
++}; // namespace android
+diff --git a/media/libmedia/IAudioFlinger.cpp b/media/libmedia/IAudioFlinger.cpp
+index 889d4db..5f3455d 100644
+--- a/media/libmedia/IAudioFlinger.cpp
++++ b/media/libmedia/IAudioFlinger.cpp
+@@ -94,6 +94,21 @@ enum {
+     GET_AUDIO_COMMAND,
+     SET_AUDIO_DATA,
+     GET_AUDIO_DATA,
++    PCM_PLAY_START,
++    PCM_PLAY_STOP,
++    PCM_PLAY_WEITE,
++    PCM_PLAY_GET_FREE_BUFFER_SIZE,
++    PCM_RECORD_START,
++    PCM_RECORD_STOP,
++    PCM_RECORD_READ,
++    Read_Ref_FromRing,
++    Get_Voice_Unlock_ULTime,
++    Set_Voice_Unlock_SRC,
++    start_Voice_Unlock_DL,
++    stop_Voice_Unlock_DL,
++    free_Voice_Unlock_DL_Instance,
++    get_Voice_Unlock_DL_Instance,
++    Get_Voice_Unlock_DL_Latency,
+ #endif
+ };
+ 
+@@ -924,6 +939,78 @@ public:
+         return remote()->transact(SYSTEM_READY, data, &reply, IBinder::FLAG_ONEWAY);
+     }
+ #ifdef MTK_AUDIO
++    //   Interfaces mtk added
++    virtual int xWayPlay_Start(int sample_rate)
++    {
++        ALOGV("xWayPlay_Start");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(sample_rate);
++        remote()->transact(PCM_PLAY_START, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++        }
++    virtual int xWayPlay_Stop()
++    {
++        ALOGV("xWayPlay_Start");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(PCM_PLAY_STOP, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++        }
++    virtual int xWayPlay_Write(void *buffer, int size_bytes)
++    {
++        ALOGV("xWayPlay_Write");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(size_bytes);
++        data.write(buffer,size_bytes);
++        remote()->transact(PCM_PLAY_WEITE, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++    }
++    virtual int xWayPlay_GetFreeBufferCount(void)
++    {
++        ALOGV("xWayPlay_GetFreeBufferCount");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(PCM_PLAY_GET_FREE_BUFFER_SIZE, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++        }
++    virtual int xWayRec_Start(int sample_rate)
++    {
++        ALOGV("xWayRec_Start");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(sample_rate);
++        remote()->transact(PCM_RECORD_START, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++        }
++    virtual int xWayRec_Stop()
++    {
++        ALOGV("xWayRec_Stop");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(PCM_RECORD_STOP, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++        }
++    virtual int xWayRec_Read(void *buffer, int size_bytes)
++    {
++        ALOGV("xWayRec_Read");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(size_bytes);
++        data.write(buffer,size_bytes);
++        remote()->transact(PCM_RECORD_READ, data, &reply);
++        reply.read(buffer, size_bytes);
++        int ret = reply.readInt32();
++        return ret;
++    }
++
+     virtual status_t GetEMParameter(void *ptr, size_t len)
+     {
+         Parcel data, reply;
+@@ -1007,6 +1094,90 @@ public:
+         }
+         return reply.readInt32();
+     }
++
++    virtual int ReadRefFromRing(void*buf, uint32_t datasz,void* DLtime)
++    {
++        ALOGV("ReadRefFromRing");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(datasz);
++        remote()->transact(Read_Ref_FromRing, data, &reply);
++        reply.read(buf, datasz);
++        reply.read(DLtime, 16);
++        int ret = reply.readInt32();
++        ALOGW("ReadRefFromRing %d", ret);
++        return ret;
++    }
++
++    virtual int GetVoiceUnlockULTime(void* DLtime)
++    {
++        ALOGV("GetVoiceUnlockULTime");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.write(DLtime,16);
++        remote()->transact(Get_Voice_Unlock_ULTime, data, &reply);
++        reply.read(DLtime, 16);
++        int ret = reply.readInt32();
++        return ret;
++    }
++    virtual int SetVoiceUnlockSRC(uint outSR, uint outCH)
++    {
++        ALOGV("SetVoiceUnlockSRC");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        data.writeInt32(outSR);
++        data.writeInt32(outCH);
++        remote()->transact(Set_Voice_Unlock_SRC, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++    }
++
++    virtual bool startVoiceUnlockDL()
++    {
++        ALOGV("startVoiceUnlockDL");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(start_Voice_Unlock_DL, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++    }
++    virtual bool stopVoiceUnlockDL()
++    {
++        ALOGV("stopVoiceUnlockDL");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(stop_Voice_Unlock_DL, data, &reply);
++        int ret = reply.readInt32();
++        return ret;
++    }
++
++    virtual void freeVoiceUnlockDLInstance ()
++    {
++        ALOGV("freeVoiceUnlockDLInstance ");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(free_Voice_Unlock_DL_Instance , data, &reply);
++        return ;
++    }
++
++    virtual bool getVoiceUnlockDLInstance()
++    {
++        ALOGV("getVoiceUnlockDLInstance");
++        Parcel data, reply;
++        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++        remote()->transact(get_Voice_Unlock_DL_Instance, data, &reply);
++        bool ret = reply.readInt32();
++        return ret;
++    }
++    virtual int GetVoiceUnlockDLLatency()
++    {
++         ALOGV("GetVoiceUnlockDLLatency");
++         Parcel data, reply;
++         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
++         remote()->transact(Get_Voice_Unlock_DL_Latency, data, &reply);
++         int ret = reply.readInt32();
++         return ret;
++    }
+ #endif
+ };
+ 
+@@ -1610,6 +1781,147 @@ status_t BnAudioFlinger::onTransact(
+             reply->writeInt32(status);
+             return NO_ERROR;
+         } break;
++
++        /////////////////////////////////////////////////////////////////////////
++        //    for PCMxWay Interface API ...
++        /////////////////////////////////////////////////////////////////////////
++        case PCM_PLAY_START:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t sample_rate = data.readInt32();
++            status_t err = xWayPlay_Start(sample_rate);
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }break;
++        case PCM_PLAY_STOP:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            status_t err = xWayPlay_Stop();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }break;
++        case PCM_PLAY_WEITE:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t size_bytes = data.readInt32();
++            void *buffer = malloc(size_bytes);
++            data.read(buffer, size_bytes);
++            status_t err = xWayPlay_Write(buffer,size_bytes);
++            reply->writeInt32(err);
++            free(buffer);
++            return NO_ERROR;
++        }
++        break;
++        case PCM_PLAY_GET_FREE_BUFFER_SIZE:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            status_t err = xWayPlay_GetFreeBufferCount();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case PCM_RECORD_START:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t sample_rate = data.readInt32();
++            status_t err = xWayRec_Start(sample_rate);
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case PCM_RECORD_STOP:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            status_t err = xWayRec_Stop();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }break;
++        case PCM_RECORD_READ:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t size_bytes = data.readInt32();
++            void *buffer = malloc(size_bytes);
++            data.read(buffer, size_bytes);
++            status_t err = xWayRec_Read(buffer,size_bytes);
++            reply->write(buffer,size_bytes);
++            reply->writeInt32(err);
++            free(buffer);
++            return NO_ERROR;
++        }break;
++        case Read_Ref_FromRing:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t size_bytes = data.readInt32();
++            void *buffer = malloc(size_bytes);
++            void *DLtime = malloc(16);
++            status_t err = ReadRefFromRing(buffer,size_bytes, DLtime);
++            reply->write(buffer,size_bytes);
++            reply->write(DLtime,16);
++            reply->writeInt32(err);
++            free(buffer);
++            free(DLtime);
++            return NO_ERROR;
++        }break;
++        case Get_Voice_Unlock_ULTime:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            void *DLtime = malloc(16);
++            data.read(DLtime, 16);
++            status_t err = GetVoiceUnlockULTime(DLtime);
++            reply->write(DLtime,16);
++            reply->writeInt32(err);
++            free(DLtime);
++            return NO_ERROR;
++        }break;
++        case Set_Voice_Unlock_SRC:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            size_t outSR = data.readInt32();
++            size_t outCH = data.readInt32();
++            status_t err = SetVoiceUnlockSRC(outSR, outCH);
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case start_Voice_Unlock_DL:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            status_t err = startVoiceUnlockDL();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case stop_Voice_Unlock_DL:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            status_t err = stopVoiceUnlockDL();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case free_Voice_Unlock_DL_Instance:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            freeVoiceUnlockDLInstance();
++            return NO_ERROR;
++        }
++        break;
++        case get_Voice_Unlock_DL_Instance:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            bool err = getVoiceUnlockDLInstance();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
++        case Get_Voice_Unlock_DL_Latency:
++        {
++            CHECK_INTERFACE(IAudioFlinger, data, reply);
++            int err = GetVoiceUnlockDLLatency();
++            reply->writeInt32(err);
++            return NO_ERROR;
++        }
++        break;
+ #endif
+         default:
+             return BBinder::onTransact(code, data, reply, flags);
+diff --git a/media/libstagefright/avc_utils.cpp b/media/libstagefright/avc_utils.cpp
+index 19556cc..5d56f4a 100644
+--- a/media/libstagefright/avc_utils.cpp
++++ b/media/libstagefright/avc_utils.cpp
+@@ -756,5 +756,142 @@ bool GetMPEGAudioFrameSize(
+     return true;
+ }
+ 
++#ifdef MTK_AOSP_ENHANCEMENT
++#define SHAPE_RECTANGULAR      0
++#define SHAPE_BINARY           1
++#define SHAPE_BINARY_ONLY      2
++#define SHAPE_GRAY_SCALE       3
++
++void scaling_list(int32_t sizeOfScalingList, ABitReader *br) {
++    int lastScale = 8;
++    int nextScale = 8;
++    for (int j = 0; j < sizeOfScalingList; j++) {
++        if (nextScale != 0) {
++            int32_t delta_scale = parseSE(br);
++            nextScale = (lastScale + delta_scale + 256) % 256;
++        }
++        lastScale = (nextScale == 0) ? lastScale : nextScale;
++    }
++}
++
++void parse_seq_scaling_matrix_present(ABitReader *br) {
++    for (int i = 0; i < 8; i++) {
++        uint32_t seq_scaling_list_present_flag =  br->getBits(1);
++        ALOGV("seq_scaling_list_presetn_flag :%d", seq_scaling_list_present_flag);
++        if (seq_scaling_list_present_flag) {
++            if (i < 6)
++                scaling_list(16, br);
++            else
++                scaling_list(64, br);
++        }
++    }
++}
++
++status_t FindAVCSPSInfo(
++        uint8_t *seqParamSet, size_t size, struct SPSInfo *pSPSInfo) {
++    if (pSPSInfo == NULL) {
++        ALOGE("pSPSInfo == NULL");
++        return -EINVAL;
++    }
++
++    ABitReader br(seqParamSet + 1, size - 1);
++
++    unsigned profile_idc = br.getBits(8);
++    pSPSInfo->profile = profile_idc;
++    br.skipBits(8);
++
++    pSPSInfo->level = br.getBits(8);
++    parseUE(&br);  // seq_parameter_set_id
++
++    unsigned chroma_format_idc = 1;  // 4:2:0 chroma format
++
++    if (profile_idc == 100 || profile_idc == 110
++            || profile_idc == 122 || profile_idc == 244
++            || profile_idc == 44 || profile_idc == 83 || profile_idc == 86) {
++        chroma_format_idc = parseUE(&br);
++        if (chroma_format_idc == 3) {
++            br.skipBits(1);  // residual_colour_transform_flag
++        }
++        parseUE(&br);  // bit_depth_luma_minus8
++        parseUE(&br);  // bit_depth_chroma_minus8
++        br.skipBits(1);  // qpprime_y_zero_transform_bypass_flag
++        // CHECK_EQ(br.getBits(1), 0u);  // seq_scaling_matrix_present_flag
++        if (br.getBits(1) != 0) {
++            ALOGW("seq_scaling_matrix_present_flag != 0");
++            parse_seq_scaling_matrix_present(&br);
++        }
++    }
++
++    parseUE(&br);  // log2_max_frame_num_minus4
++    unsigned pic_order_cnt_type = parseUE(&br);
++
++    if (pic_order_cnt_type == 0) {
++        parseUE(&br);  // log2_max_pic_order_cnt_lsb_minus4
++    } else if (pic_order_cnt_type == 1) {
++        // offset_for_non_ref_pic, offset_for_top_to_bottom_field and
++        // offset_for_ref_frame are technically se(v), but since we are
++        // just skipping over them the midpoint does not matter.
++
++        br.getBits(1);  // delta_pic_order_always_zero_flag
++        parseUE(&br);  // offset_for_non_ref_pic
++        parseUE(&br);  // offset_for_top_to_bottom_field
++
++        unsigned num_ref_frames_in_pic_order_cnt_cycle = parseUE(&br);
++        for (unsigned i = 0; i < num_ref_frames_in_pic_order_cnt_cycle; ++i) {
++            parseUE(&br);  // offset_for_ref_frame
++        }
++    }
++
++    parseUE(&br);  // num_ref_frames
++    br.getBits(1);  // gaps_in_frame_num_value_allowed_flag
++
++    unsigned pic_width_in_mbs_minus1 = parseUE(&br);
++    unsigned pic_height_in_map_units_minus1 = parseUE(&br);
++    unsigned frame_mbs_only_flag = br.getBits(1);
++
++    pSPSInfo->width = pic_width_in_mbs_minus1 * 16 + 16;
++
++    pSPSInfo->height = (2 - frame_mbs_only_flag)
++        * (pic_height_in_map_units_minus1 * 16 + 16);
++
++    if (!frame_mbs_only_flag) {
++        br.getBits(1);  // mb_adaptive_frame_field_flag
++    }
++
++    br.getBits(1);  // direct_8x8_inference_flag
++
++    if (br.getBits(1)) {  // frame_cropping_flag
++        unsigned frame_crop_left_offset = parseUE(&br);
++        unsigned frame_crop_right_offset = parseUE(&br);
++        unsigned frame_crop_top_offset = parseUE(&br);
++        unsigned frame_crop_bottom_offset = parseUE(&br);
++
++        unsigned cropUnitX, cropUnitY;
++        if (chroma_format_idc == 0  /* monochrome */) {
++            cropUnitX = 1;
++            cropUnitY = 2 - frame_mbs_only_flag;
++        } else {
++            unsigned subWidthC = (chroma_format_idc == 3) ? 1 : 2;
++            unsigned subHeightC = (chroma_format_idc == 1) ? 2 : 1;
++
++            cropUnitX = subWidthC;
++            cropUnitY = subHeightC * (2 - frame_mbs_only_flag);
++        }
++
++        ALOGV("frame_crop = (%u, %u, %u, %u), cropUnitX = %u, cropUnitY = %u",
++                frame_crop_left_offset, frame_crop_right_offset,
++                frame_crop_top_offset, frame_crop_bottom_offset,
++                cropUnitX, cropUnitY);
++
++        pSPSInfo->width -=
++            (frame_crop_left_offset + frame_crop_right_offset) * cropUnitX;
++        pSPSInfo->height -=
++            (frame_crop_top_offset + frame_crop_bottom_offset) * cropUnitY;
++    }
++
++    return OK;
++}
++
++#endif  // #ifdef MTK_AOSP_ENHANCEMENT
+ }  // namespace android
+ 
+diff --git a/media/libstagefright/include/avc_utils.h b/media/libstagefright/include/avc_utils.h
+index dafa07e..e9e46e3 100644
+--- a/media/libstagefright/include/avc_utils.h
++++ b/media/libstagefright/include/avc_utils.h
+@@ -76,6 +76,17 @@ bool GetMPEGAudioFrameSize(
+         int *out_sampling_rate = NULL, int *out_channels = NULL,
+         int *out_bitrate = NULL, int *out_num_samples = NULL);
+ 
++#ifdef MTK_AOSP_ENHANCEMENT
++struct SPSInfo {
++    int32_t width;
++    int32_t height;
++    uint32_t profile;
++    uint32_t level;
++status_t FindAVCSPSInfo(
++        uint8_t *seqParamSet, size_t size, struct SPSInfo *pSPSInfo);
++#endif  // #ifdef MTK_AOSP_ENHANCEMENT
++};
++
+ }  // namespace android
+ 
+ #endif  // AVC_UTILS_H_
+diff --git a/services/audioflinger/AudioFlinger.cpp b/services/audioflinger/AudioFlinger.cpp
+index 2b531b7..de1269d 100644
+--- a/services/audioflinger/AudioFlinger.cpp
++++ b/services/audioflinger/AudioFlinger.cpp
+@@ -298,6 +298,342 @@ status_t AudioFlinger::GetAudioCommand(int parameters1)
+     mHardwareStatus = AUDIO_HW_IDLE;
+     return value;
+ }
++/////////////////////////////////////////////////////////////////////////
++//    for PCMxWay Interface API ...   Stan
++/////////////////////////////////////////////////////////////////////////
++int AudioFlinger::xWayPlay_Start(int sample_rate)
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayPlay_Start)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayPlay_Start(dev,sample_rate);
++}
++
++int AudioFlinger::xWayPlay_Stop()
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayPlay_Stop)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayPlay_Stop(dev);
++}
++
++int AudioFlinger::xWayPlay_Write(void *buffer, int size_bytes)
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayPlay_Write)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayPlay_Write(dev,buffer,size_bytes);
++}
++
++int AudioFlinger::xWayPlay_GetFreeBufferCount()
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayPlay_GetFreeBufferCount)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayPlay_GetFreeBufferCount(dev);
++}
++
++int AudioFlinger::xWayRec_Start(int sample_rate)
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayRec_Start)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayRec_Start(dev,sample_rate);
++}
++
++int AudioFlinger::xWayRec_Stop()
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayRec_Stop)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayRec_Stop(dev);
++}
++
++int AudioFlinger::xWayRec_Read(void *buffer, int size_bytes)
++{
++    AutoMutex lock(mHardwareLock);
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->xWayRec_Read)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->xWayRec_Read(dev,buffer,size_bytes);
++}
++
++int AudioFlinger::ReadRefFromRing(void*buf, uint32_t datasz,void* DLtime)
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGV("AudioFlinger:: ReadRefFromRing");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->ReadRefFromRing)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->ReadRefFromRing(dev,buf, datasz, DLtime);
++}
++int AudioFlinger::GetVoiceUnlockULTime(void* DLtime)
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGV("AudioFlinger:: GetVoiceUnlockULTime");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->GetVoiceUnlockULTime)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->GetVoiceUnlockULTime(dev, DLtime);
++}
++int AudioFlinger::SetVoiceUnlockSRC(uint outSR, uint outChannel)
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: SetVoiceUnlockSRC");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->SetVoiceUnlockSRC)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->SetVoiceUnlockSRC(dev,outSR, outChannel);
++}
++bool AudioFlinger::startVoiceUnlockDL()
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: startVoiceUnlockDL");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->startVoiceUnlockDL)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->startVoiceUnlockDL(dev);
++}
++bool AudioFlinger::stopVoiceUnlockDL()
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: stopVoiceUnlockDL");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->stopVoiceUnlockDL)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->stopVoiceUnlockDL(dev);
++}
++void AudioFlinger::freeVoiceUnlockDLInstance()
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: freeVoiceUnlockDLInstance");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return;// INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return;// INVALID_OPERATION;
++    }
++    if (NULL == dev->freeVoiceUnlockDLInstance)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return;// INVALID_OPERATION;
++    }
++    return dev->freeVoiceUnlockDLInstance(dev);
++}
++
++bool AudioFlinger::getVoiceUnlockDLInstance()
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: getVoiceUnlockDLInstance");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->getVoiceUnlockDLInstance)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->getVoiceUnlockDLInstance(dev);
++}
++int AudioFlinger::GetVoiceUnlockDLLatency()
++{
++    //AutoMutex lock(mHardwareLock);
++    ALOGD("AudioFlinger:: GetVoiceUnlockDLLatency");
++    if (NULL == mPrimaryHardwareDev)
++    {
++        ALOGE("%s mPrimaryHardwareDev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    audio_hw_device_mtk_t *dev = static_cast<audio_hw_device_mtk_t*>(mPrimaryHardwareDev->hwDevice());
++    if (NULL == dev)
++    {
++        ALOGE("%s dev is null",__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    if (NULL == dev->GetVoiceUnlockDLLatency)
++    {
++        ALOGE("%s dev->%s is null",__FUNCTION__,__FUNCTION__);
++        return INVALID_OPERATION;
++    }
++    return dev->GetVoiceUnlockDLLatency(dev);
++}
++
++
+ #endif
+ const char *formatToString(audio_format_t format) {
+     switch (format & AUDIO_FORMAT_MAIN_MASK) {
+diff --git a/services/audioflinger/AudioFlinger.h b/services/audioflinger/AudioFlinger.h
+index d958a39..c561bf0 100644
+--- a/services/audioflinger/AudioFlinger.h
++++ b/services/audioflinger/AudioFlinger.h
+@@ -106,12 +106,33 @@ public:
+ 
+ #ifdef MTK_AUDIO
+ //<MTK_AUDIO_ADD
++    /////////////////////////////////////////////////////////////////////////
++    //    for PCMxWay Interface API ...   Stan
++    /////////////////////////////////////////////////////////////////////////
++    virtual int xWayPlay_Start(int sample_rate);
++    virtual int xWayPlay_Stop(void);
++    virtual int xWayPlay_Write(void *buffer, int size_bytes);
++    virtual int xWayPlay_GetFreeBufferCount(void);
++    virtual int xWayRec_Start(int sample_rate);
++    virtual int xWayRec_Stop(void);
++    virtual int xWayRec_Read(void *buffer, int size_bytes);
++
++    // add by chipeng to EM mode setting
+     virtual status_t GetEMParameter(void *ptr, size_t len);
+     virtual status_t SetEMParameter(void *ptr, size_t len);
+     virtual status_t SetAudioData(int par1,size_t len,void *ptr);
+     virtual status_t GetAudioData(int par1,size_t len,void *ptr);
+     virtual status_t SetAudioCommand(int parameters1,int parameters2);
+     virtual status_t GetAudioCommand(int parameters1);
++
++    virtual status_t ReadRefFromRing(void*buf, uint32_t datasz, void* DLtime);
++    virtual int GetVoiceUnlockULTime(void* DLtime);
++    virtual status_t SetVoiceUnlockSRC(uint outSR, uint outChannel);
++    virtual bool startVoiceUnlockDL();
++    virtual bool stopVoiceUnlockDL();
++    virtual void freeVoiceUnlockDLInstance();
++    virtual int GetVoiceUnlockDLLatency();
++    virtual bool getVoiceUnlockDLInstance();
+ //MTK_AUDIO_ADD>
+ #endif
+ 
+-- 
+2.30.2
+

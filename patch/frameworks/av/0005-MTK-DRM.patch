@@ -1,0 +1,111 @@
+From b3671caeced0182f709cded0374cfeb6923ced7f Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Wed, 8 Mar 2023 21:05:35 +0300
+Subject: [PATCH] MTK DRM
+
+Change-Id: I4751def9c155a6ba5f25d906c3d00224e1de12ac
+---
+ drm/drmserver/Android.mk            | 27 +++++++++++++++++++++++++++
+ drm/drmserver/DrmManagerService.cpp | 25 +++++++++++++++++++++----
+ 2 files changed, 48 insertions(+), 4 deletions(-)
+
+diff --git a/drm/drmserver/Android.mk b/drm/drmserver/Android.mk
+index 48ea385..aeb813f 100644
+--- a/drm/drmserver/Android.mk
++++ b/drm/drmserver/Android.mk
+@@ -29,6 +29,25 @@ LOCAL_SHARED_LIBRARIES := \
+     libdl \
+     libselinux
+ 
++ifeq ($(strip $(MTK_DRM_APP)),yes)
++  ifeq ($(strip $(MTK_OMADRM_SUPPORT)),yes)
++    LOCAL_CFLAGS += -DMTK_OMA_DRM_SUPPORT
++    LOCAL_SHARED_LIBRARIES += \
++        libdrmmtkutil \
++        libdrmmtkwhitelist
++  else ifeq ($(strip $(MTK_CTA_SET)),yes)
++    LOCAL_CFLAGS += -DMTK_CTA_DRM_SUPPORT
++    LOCAL_SHARED_LIBRARIES += \
++        libdrmmtkutil \
++        libdrmmtkwhitelist
++  endif
++else ifeq ($(strip $(MTK_WVDRM_SUPPORT)),yes)
++  LOCAL_CFLAGS += -DMTK_WV_DRM_SUPPORT
++  LOCAL_SHARED_LIBRARIES += \
++      libdrmmtkutil \
++      libdrmmtkwhitelist
++endif
++
+ LOCAL_STATIC_LIBRARIES := libdrmframeworkcommon
+ 
+ LOCAL_C_INCLUDES := \
+@@ -36,6 +55,14 @@ LOCAL_C_INCLUDES := \
+     $(TOP)/frameworks/av/drm/libdrmframework/include \
+     $(TOP)/frameworks/av/drm/libdrmframework/plugins/common/include
+ 
++ifeq ($(strip $(MTK_DRM_APP)),yes)
++  LOCAL_C_INCLUDES += \
++      $(MTK_PATH_SOURCE)/frameworks/av/include
++else ifeq ($(strip $(MTK_WVDRM_SUPPORT)),yes)
++  LOCAL_C_INCLUDES += \
++      $(MTK_PATH_SOURCE)/frameworks/av/include
++endif
++
+ LOCAL_MODULE:= drmserver
+ 
+ LOCAL_MODULE_TAGS := optional
+diff --git a/drm/drmserver/DrmManagerService.cpp b/drm/drmserver/DrmManagerService.cpp
+index df08f32..b8b1cab 100644
+--- a/drm/drmserver/DrmManagerService.cpp
++++ b/drm/drmserver/DrmManagerService.cpp
+@@ -31,6 +31,11 @@
+ 
+ #include <selinux/android.h>
+ 
++#if defined(MTK_OMA_DRM_SUPPORT) || defined(MTK_WV_DRM_SUPPORT) || defined (MTK_CTA_DRM_SUPPORT)
++#include <drm/DrmMtkUtil.h>
++#include <drm/DrmMtkDef.h>
++#endif
++
+ using namespace android;
+ 
+ static int selinux_enabled;
+@@ -84,19 +89,31 @@ bool DrmManagerService::isProtectedCallAllowed(drm_perm_t perm) {
+     // TODO
+     // Following implementation is just for reference.
+     // Each OEM manufacturer should implement/replace with their own solutions.
++    bool result = false;
+     IPCThreadState* ipcState = IPCThreadState::self();
+     uid_t uid = ipcState->getCallingUid();
+     pid_t spid = ipcState->getCallingPid();
+ 
+     for (unsigned int i = 0; i < trustedUids.size(); ++i) {
+         if (trustedUids[i] == uid) {
+-            return selinuxIsProtectedCallAllowed(spid, perm);
++            result = selinuxIsProtectedCallAllowed(spid, perm);
+         }
+     }
+-    if (checkCallingPermission(String16("com.oma.drm.permission.ACCESS_OMA_DRM")) == true) {
+-        return true;
++    if (!result && checkCallingPermission(String16("com.oma.drm.permission.ACCESS_OMA_DRM")) == true) {
++        result = true;
+     }
+-    return false;
++
++#if defined(MTK_OMA_DRM_SUPPORT) || defined(MTK_WV_DRM_SUPPORT) || defined (MTK_CTA_DRM_SUPPORT)
++    // M:
++    // for OMA DRM v1 implementation
++    // if can't authorize the process by UID, then check the process name.
++    if (!result) {
++        pid_t pid = ipcState->getCallingPid();
++        result = DrmTrustedClient::IsDrmTrustedClient(DrmMtkUtil::getProcessName(pid));
++    }
++#endif
++
++    return result;
+ }
+ 
+ void DrmManagerService::instantiate() {
+-- 
+2.30.2
+

@@ -1,0 +1,27 @@
+From 9ce8547337eb0241bf8407f5e003c975f0c7aed4 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Thu, 30 Mar 2023 01:40:46 +0300
+Subject: [PATCH] Temporary fix access bluetooth to nvram
+
+Change-Id: Ib8c3ca7604e30b47707179e783c385dead6ea45a
+---
+ app.te | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/app.te b/app.te
+index 66e596e..f1d1674 100644
+--- a/app.te
++++ b/app.te
+@@ -219,7 +219,8 @@ neverallow { appdomain -bluetooth } self:capability *;
+ neverallow { appdomain -bluetooth } self:capability2 *;
+ 
+ # Block device access.
+-neverallow appdomain dev_type:blk_file { read write };
++#neverallow appdomain dev_type:blk_file { read write };
++neverallow { appdomain -bluetooth } dev_type:blk_file { read write };
+ 
+ # Access to any of the following character devices.
+ neverallow appdomain {
+-- 
+2.30.2
+

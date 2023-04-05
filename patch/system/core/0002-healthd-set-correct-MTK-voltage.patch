@@ -1,0 +1,43 @@
+From cc59abf3a531b924422f858245790a301d331e98 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Sat, 4 Mar 2023 02:17:52 +0300
+Subject: [PATCH] healthd: set correct(MTK) voltage
+
+Change-Id: I8d9a6ec3a9f6668aef1655dd2b52e935bb287585
+---
+ healthd/BatteryMonitor.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/healthd/BatteryMonitor.cpp b/healthd/BatteryMonitor.cpp
+index 86a4fc6..8b4e127 100644
+--- a/healthd/BatteryMonitor.cpp
++++ b/healthd/BatteryMonitor.cpp
+@@ -207,8 +207,12 @@ bool BatteryMonitor::update(void) {
+     props.batteryLevel = mBatteryFixedCapacity ?
+         mBatteryFixedCapacity :
+         getIntField(mHealthdConfig->batteryCapacityPath);
++#ifdef MTK_HARDWARE
++    props.batteryVoltage = getIntField(mHealthdConfig->batteryVoltagePath);
++#else
+     props.batteryVoltage = getIntField(mHealthdConfig->batteryVoltagePath) / 1000;
+ 
++#endif
+     props.batteryTemperature = mBatteryFixedTemperature ?
+         mBatteryFixedTemperature :
+         getIntField(mHealthdConfig->batteryTemperaturePath);
+@@ -245,8 +249,12 @@ bool BatteryMonitor::update(void) {
+         props.dockBatteryLevel = mBatteryFixedCapacity ?
+             mBatteryFixedCapacity :
+             getIntField(mHealthdConfig->dockBatteryCapacityPath);
++#ifdef MTK_HARDWARE
++        props.dockBatteryVoltage = getIntField(mHealthdConfig->dockBatteryVoltagePath);
++#else
+         props.dockBatteryVoltage = getIntField(mHealthdConfig->dockBatteryVoltagePath) / 1000;
+ 
++#endif
+         props.dockBatteryTemperature = mBatteryFixedTemperature ?
+             mBatteryFixedTemperature :
+             getIntField(mHealthdConfig->dockBatteryTemperaturePath);
+-- 
+2.30.2
+

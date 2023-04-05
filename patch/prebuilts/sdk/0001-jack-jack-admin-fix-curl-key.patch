@@ -1,0 +1,41 @@
+From 69a0c9ea7672896d19e5c88b6eadd4ae4cf6a5fc Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Thu, 30 Mar 2023 01:38:28 +0300
+Subject: [PATCH] jack, jack-admin: fix curl key --noproxy instead of
+ --no-proxy
+
+Change-Id: Ife3da7115c02052fcfba2943742fe7bd5124d22b
+---
+ tools/jack       | 2 +-
+ tools/jack-admin | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/jack b/tools/jack
+index ab59768..1371811 100755
+--- a/tools/jack
++++ b/tools/jack
+@@ -125,7 +125,7 @@ DELAY_CONNECT=30
+ DATE_CONNECT=$(date +%s)
+ while true; do
+   CURL_TIME=$(date +%H:%M:%S)
+-  HTTP_CODE=$(curl --fail --silent --data @- --output "$JACK_EXIT" --write-out %{http_code} --connect-timeout 10 --no-proxy 127.0.0.1:$SERVER_PORT_SERVICE http://127.0.0.1:$SERVER_PORT_SERVICE/jack <<< "+ $JACK_OUT $JACK_ERR $JACK_CLI")
++  HTTP_CODE=$(curl --fail --silent --data @- --output "$JACK_EXIT" --write-out %{http_code} --connect-timeout 10 --noproxy 127.0.0.1:$SERVER_PORT_SERVICE http://127.0.0.1:$SERVER_PORT_SERVICE/jack <<< "+ $JACK_OUT $JACK_ERR $JACK_CLI")
+   CURL_CODE=$?
+   JACK_CODE=$(cat "$JACK_EXIT")
+   echo "CURL: $$ - $CURL_TIME - $CURL_CODE - $HTTP_CODE - $JACK_CODE" >>$SERVER_LOG
+diff --git a/tools/jack-admin b/tools/jack-admin
+index a7c4e8e..30c1968 100755
+--- a/tools/jack-admin
++++ b/tools/jack-admin
+@@ -120,7 +120,7 @@ DELAY_CONNECT=3
+ # Send command to Jack server
+ DATE_CONNECT=$(date +%s)
+ while true; do
+-  HTTP_CODE=$(curl --fail --silent --output $JACK_EXIT --write-out %{http_code} --connect-timeout 5 --no-proxy 127.0.0.1:$SERVER_PORT_ADMIN http://127.0.0.1:$SERVER_PORT_ADMIN/$CMD)
++  HTTP_CODE=$(curl --fail --silent --output $JACK_EXIT --write-out %{http_code} --connect-timeout 5 --noproxy 127.0.0.1:$SERVER_PORT_ADMIN http://127.0.0.1:$SERVER_PORT_ADMIN/$CMD)
+   CURL_CODE=$?
+   if [ $CURL_CODE -eq 0 ]; then
+     # No problem, let's go
+-- 
+2.30.2
+

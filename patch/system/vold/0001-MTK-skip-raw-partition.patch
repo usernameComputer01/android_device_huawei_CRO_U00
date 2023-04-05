@@ -1,0 +1,52 @@
+From f73894a73b81853fd3143c4b0eb4e712ff24a100 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Sun, 26 Feb 2023 02:19:29 +0300
+Subject: [PATCH] MTK skip raw partition
+
+Change-Id: I469eff4016e3a90adf88b3d4b42842da65b22a99
+---
+ VolumeManager.cpp | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/VolumeManager.cpp b/VolumeManager.cpp
+index 2f623ef..287585a 100755
+--- a/VolumeManager.cpp
++++ b/VolumeManager.cpp
+@@ -91,6 +91,13 @@ const char *VolumeManager::LOOPDIR           = "/mnt/obb";
+ static const char* kUserMountPath = "/mnt/user";
+ 
+ static const unsigned int kMajorBlockMmc = 179;
++#ifdef MTK_HARDWARE
++#ifdef MTK_EMMC_SUPPORT
++    static const unsigned int kMinorBlockEMMC = 0;
++#else
++    static const int kMinorBlockEMMC = -1;
++#endif
++#endif
+ 
+ /* writes superblock at end of file or device given by name */
+ static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigned int numImgSectors) {
+@@ -294,6 +301,20 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
+ 
+     switch (evt->getAction()) {
+     case NetlinkEvent::Action::kAdd: {
++#ifdef MTK_HARDWARE
++        std::string devName(evt->findParam("DEVNAME"));
++        if (strstr(devName.c_str(), "boot") || strstr(devName.c_str(), "rpmb")){
++               LOG(DEBUG) << "Skip '" << devName << "' disk uevent";
++               break;
++        }
++
++#ifdef MTK_SHARED_SDCARD
++         if (major == kMajorBlockMmc && minor == kMinorBlockEMMC) {
++               SLOGI("%s(): For MTK_SHARED_SDCARD, remove EMMC disk", __FUNCTION__);
++               break;
++         }
++#endif
++#endif
+         for (auto source : mDiskSources) {
+             if (source->matches(eventPath)) {
+                 // For now, assume that MMC devices are SD, and that
+-- 
+2.30.2
+

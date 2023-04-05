@@ -1,0 +1,27 @@
+From 6911faf31baffabebb4719b111c68716a30ab48b Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Fri, 24 Feb 2023 15:27:25 +0300
+Subject: [PATCH] libsurfaceflinger: Fix bad color display
+
+Change-Id: I03349d3d9528ecacee3cb8109395784625ae8cb8
+---
+ services/surfaceflinger/DisplayUtils.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/services/surfaceflinger/DisplayUtils.cpp b/services/surfaceflinger/DisplayUtils.cpp
+index e618e89..2412707 100644
+--- a/services/surfaceflinger/DisplayUtils.cpp
++++ b/services/surfaceflinger/DisplayUtils.cpp
+@@ -177,6 +177,9 @@ bool DisplayUtils::createV4L2BasedVirtualDisplay(HWComposer* hwc, int32_t &hwcDi
+ bool DisplayUtils::canAllocateHwcDisplayIdForVDS(int usage) {
+     // on AOSP builds with QTI_BSP disabled, we should allocate hwc display id for virtual display
+     int flag_mask = 0xffffffff;
++#ifdef MTK_HARDWARE
++    flag_mask = 0;
++#endif
+ 
+ #ifdef QTI_BSP
+ #ifdef FORCE_HWC_COPY_FOR_VIRTUAL_DISPLAYS
+-- 
+2.30.2
+
