@@ -1,0 +1,3048 @@
+From 8b17fe47456eaca46fcc60890844d82212318175 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Tue, 14 Feb 2023 22:13:31 +0300
+Subject: [PATCH] MTK PerfService
+
+Change-Id: Id93f780bd292138b409fc57edba5c8d9f94445af
+---
+ Android.mk                                    |   1 +
+ .../android/app/SystemServiceRegistry.java    |  19 +
+ core/java/android/content/Context.java        |   7 +
+ core/java/android/webkit/WebView.java         |  48 ++
+ .../mediatek/perfservice/IPerfService.aidl    |  40 +
+ .../perfservice/IPerfServiceManager.java      |  63 ++
+ .../perfservice/IPerfServiceWrapper.java      |  90 +++
+ .../perfservice/PerfServiceWrapper.java       | 384 +++++++++
+ core/jni/Android.mk                           |   2 +
+ core/jni/AndroidRuntime.cpp                   |   3 +
+ ...ediatek_perfservice_PerfServiceWrapper.cpp |  43 ++
+ libs/hwui/Android.common.mk                   |   3 +
+ libs/hwui/renderthread/CanvasContext.cpp      |  19 +
+ opengl/java/android/opengl/GLSurfaceView.java |  15 +
+ .../server/am/ActivityManagerDebugConfig.java |   4 +
+ .../server/am/ActivityManagerService.java     |  31 +
+ .../com/android/server/am/ActivityRecord.java |   5 +
+ .../com/android/server/am/ActivityStack.java  |  54 ++
+ .../server/am/IActivityStateNotifier.java     |  32 +
+ .../server/wm/WindowManagerService.java       |  25 +
+ .../mediatek/perfservice/PerfServiceImpl.java | 192 +++++
+ .../perfservice/PerfServiceManager.java       | 659 ++++++++++++++++
+ .../perfservice/PerfServiceStateNotifier.java |  55 ++
+ services/core/jni/Android.mk                  |   5 +
+ ...ediatek_perfservice_PerfServiceManager.cpp | 727 ++++++++++++++++++
+ services/core/jni/onload.cpp                  |   2 +
+ .../java/com/android/server/SystemServer.java |  53 ++
+ 27 files changed, 2581 insertions(+)
+ create mode 100755 core/java/com/mediatek/perfservice/IPerfService.aidl
+ create mode 100755 core/java/com/mediatek/perfservice/IPerfServiceManager.java
+ create mode 100755 core/java/com/mediatek/perfservice/IPerfServiceWrapper.java
+ create mode 100755 core/java/com/mediatek/perfservice/PerfServiceWrapper.java
+ create mode 100644 core/jni/com_mediatek_perfservice_PerfServiceWrapper.cpp
+ create mode 100644 services/core/java/com/android/server/am/IActivityStateNotifier.java
+ create mode 100755 services/core/java/com/mediatek/perfservice/PerfServiceImpl.java
+ create mode 100755 services/core/java/com/mediatek/perfservice/PerfServiceManager.java
+ create mode 100755 services/core/java/com/mediatek/perfservice/PerfServiceStateNotifier.java
+ create mode 100755 services/core/jni/com_mediatek_perfservice_PerfServiceManager.cpp
+
+diff --git a/Android.mk b/Android.mk
+index 03651fa7..53726778 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -421,6 +421,7 @@ LOCAL_SRC_FILES += \
+ 	packages/services/Proxy/com/android/net/IProxyCallback.aidl \
+ 	packages/services/Proxy/com/android/net/IProxyPortListener.aidl \
+ 	../../vendor/cmsdk/sdk/src/java/org/cyanogenmod/internal/themes/IIconCacheManager.aidl \
++	core/java/com/mediatek/perfservice/IPerfService.aidl \
+ 
+ # FRAMEWORKS_BASE_JAVA_SRC_DIRS comes from build/core/pathmap.mk
+ LOCAL_AIDL_INCLUDES += $(FRAMEWORKS_BASE_JAVA_SRC_DIRS)
+diff --git a/core/java/android/app/SystemServiceRegistry.java b/core/java/android/app/SystemServiceRegistry.java
+index 34c967f9..a2ae8c29 100644
+--- a/core/java/android/app/SystemServiceRegistry.java
++++ b/core/java/android/app/SystemServiceRegistry.java
+@@ -117,6 +117,11 @@ import android.view.accessibility.CaptioningManager;
+ import android.view.inputmethod.InputMethodManager;
+ import android.view.textservice.TextServicesManager;
+ 
++/// M: comment @{ add PerfService
++import com.mediatek.perfservice.IPerfServiceWrapper;
++import com.mediatek.perfservice.PerfServiceWrapper;
++/// @}
++
+ import java.util.HashMap;
+ 
+ /**
+@@ -706,6 +711,20 @@ final class SystemServiceRegistry {
+             public RadioManager createService(ContextImpl ctx) {
+                 return new RadioManager(ctx);
+             }});
++
++        /// M: comment @{ add PerfService
++        registerService(Context.MTK_PERF_SERVICE, IPerfServiceWrapper.class,
++                new CachedServiceFetcher<IPerfServiceWrapper>() {
++            @Override
++            public IPerfServiceWrapper createService(ContextImpl ctx) {
++                IPerfServiceWrapper perfServiceMgr = null;
++                try {
++                    perfServiceMgr = new PerfServiceWrapper(ctx);
++                } catch (Exception e) {
++                    e.printStackTrace();
++                }
++                return perfServiceMgr;
++            }});
+     }
+ 
+     /**
+diff --git a/core/java/android/content/Context.java b/core/java/android/content/Context.java
+index 7ddda110..b5f945bb 100644
+--- a/core/java/android/content/Context.java
++++ b/core/java/android/content/Context.java
+@@ -2683,6 +2683,13 @@ public abstract class Context {
+      */
+     public abstract String getSystemServiceName(Class<?> serviceClass);
+ 
++    /// M: comment @{ add PerfService service
++    /**
++     * @hide
++     */
++    public static final String MTK_PERF_SERVICE = "mtk-perfservice";
++    /// @}
++
+     /**
+      * Use with {@link #getSystemService} to retrieve a
+      * {@link android.os.PowerManager} for controlling power management,
+diff --git a/core/java/android/webkit/WebView.java b/core/java/android/webkit/WebView.java
+index aa72eb3c..4ee17378 100644
+--- a/core/java/android/webkit/WebView.java
++++ b/core/java/android/webkit/WebView.java
+@@ -53,6 +53,14 @@ import android.view.inputmethod.EditorInfo;
+ import android.view.inputmethod.InputConnection;
+ import android.widget.AbsoluteLayout;
+ 
++/// M:PerfBoost include @{
++import android.os.Handler;
++import com.mediatek.perfservice.IPerfServiceWrapper;
++import com.mediatek.perfservice.PerfServiceWrapper;
++import java.io.IOException;
++import java.io.RandomAccessFile;
++/// @}
++
+ import java.io.BufferedWriter;
+ import java.io.File;
+ import java.util.Map;
+@@ -308,6 +316,12 @@ public class WebView extends AbsoluteLayout
+     // set in the WebView constructor.
+     private static volatile boolean sEnforceThreadChecking = false;
+ 
++    /// M:PerfBoost include @{
++    private static IPerfServiceWrapper sPerfService = null;
++    private static int sPerfHandle = -1;
++    private static boolean sFirstLoadData = true;
++    /// @}
++
+     /**
+      *  Transportation object for returning WebView across thread boundaries.
+      */
+@@ -943,6 +957,40 @@ public class WebView extends AbsoluteLayout
+      */
+     public void loadData(String data, String mimeType, String encoding) {
+         checkThread();
++        /// M:PerfBoost include @{
++        if (sFirstLoadData) {
++            int maxFreq = 0;
++            try {
++                String freqFile = "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq";
++                RandomAccessFile reader = new RandomAccessFile(freqFile, "r");
++                String stringMaxFreq = reader.readLine();
++                reader.close();
++                maxFreq = Integer.parseInt(stringMaxFreq);
++            } catch (IOException | NumberFormatException e) {
++                e.printStackTrace();
++            }
++            if (maxFreq != 0) {
++                sPerfService = new PerfServiceWrapper(null);
++                if (sPerfService != null) {
++                    int minCPU = 2;
++                    if (maxFreq < 1100000)
++                        minCPU = 4;
++                    sPerfHandle = sPerfService.userReg(minCPU, maxFreq);
++                    if (sPerfHandle != -1) {
++                        sPerfService.userEnableTimeoutMs(sPerfHandle, 500);
++                        Handler handler = new Handler();
++                        handler.postDelayed(new Runnable() {
++                            @Override
++                            public void run() {
++                                sPerfService.userUnreg(sPerfHandle);
++                            }
++                        }, 600);
++                    }
++                }
++            }
++            sFirstLoadData = false;
++        }
++        /// @}
+         mProvider.loadData(data, mimeType, encoding);
+     }
+ 
+diff --git a/core/java/com/mediatek/perfservice/IPerfService.aidl b/core/java/com/mediatek/perfservice/IPerfService.aidl
+new file mode 100755
+index 00000000..7fe4a60a
+--- /dev/null
++++ b/core/java/com/mediatek/perfservice/IPerfService.aidl
+@@ -0,0 +1,40 @@
++package com.mediatek.perfservice;
++
++/** @hide */
++interface IPerfService {
++
++    void boostEnable(int scenario);
++    void boostDisable(int scenario);
++    void boostEnableTimeout(int scenario, int timeout);
++    void boostEnableTimeoutMs(int scenario, int timeout_ms);
++    void notifyAppState(String packName, String className, int state, int pid);
++
++    int  userReg(int scn_core, int scn_freq, int pid, int tid);
++    int  userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little, int pid, int tid);
++    void userUnreg(int handle);
++
++    int  userGetCapability(int cmd);
++
++    int  userRegScn(int pid, int tid);
++    void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4);
++    void userUnregScn(int handle);
++
++    void userEnable(int handle);
++    void userEnableTimeout(int handle, int timeout);
++    void userEnableTimeoutMs(int handle, int timeout_ms);
++    void userDisable(int handle);
++
++    void userResetAll();
++    void userDisableAll();
++    void userRestoreAll();
++
++    void dumpAll();
++
++    void setFavorPid(int pid);
++    void restorePolicy(int pid);
++    String getPackName();
++    int getLastBoostPid();
++    oneway void notifyFrameUpdate(int level);
++    oneway void notifyDisplayType(int type);
++    oneway void notifyUserStatus(int type, int status);
++}
+diff --git a/core/java/com/mediatek/perfservice/IPerfServiceManager.java b/core/java/com/mediatek/perfservice/IPerfServiceManager.java
+new file mode 100755
+index 00000000..8edebb9d
+--- /dev/null
++++ b/core/java/com/mediatek/perfservice/IPerfServiceManager.java
+@@ -0,0 +1,63 @@
++
++package com.mediatek.perfservice;
++
++//import java.io.File;
++//import java.io.OutputStreamWriter;
++//import java.io.InputStream;
++//import java.io.InputStreamReader;
++//import java.io.FileInputStream;
++//import java.io.BufferedReader;
++//import java.io.IOException;
++//import java.util.*;
++
++//import android.content.Context;
++//import android.content.Intent;
++//import android.content.IntentFilter;
++//import android.content.BroadcastReceiver;
++//import android.os.Handler;
++//import android.os.HandlerThread;
++//import android.os.Looper;
++//import android.os.Message;
++//import android.os.Process;
++//import android.util.Log;
++//import static junit.framework.Assert.*;
++
++public interface IPerfServiceManager {
++
++    public void systemReady();
++
++    public void boostEnable(int scenario);
++    public void boostDisable(int scenario);
++    public void boostEnableTimeout(int scenario, int timeout);
++    public void boostEnableTimeoutMs(int scenario, int timeout_ms);
++    public void notifyAppState(String packName, String className, int state, int pid);
++
++    public int  userReg(int scn_core, int scn_freq, int pid, int tid);
++    public int  userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little, int pid, int tid);
++    public void userUnreg(int handle);
++
++    public int  userGetCapability(int cmd);
++
++    public int  userRegScn(int pid, int tid);
++    public void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4);
++    public void userUnregScn(int handle);
++
++    public void userEnable(int handle);
++    public void userEnableTimeout(int handle, int timeout);
++    public void userEnableTimeoutMs(int handle, int timeout_ms);
++    public void userDisable(int handle);
++
++    public void userResetAll();
++    public void userDisableAll();
++    public void userRestoreAll();
++
++    public void dumpAll();
++
++    public void setFavorPid(int pid);
++    public void restorePolicy(int pid);
++    public String getPackName();
++    public int getLastBoostPid();
++    public void notifyFrameUpdate(int level);
++    public void notifyDisplayType(int type);
++    public void notifyUserStatus(int type, int status);
++}
+diff --git a/core/java/com/mediatek/perfservice/IPerfServiceWrapper.java b/core/java/com/mediatek/perfservice/IPerfServiceWrapper.java
+new file mode 100755
+index 00000000..aeb0af58
+--- /dev/null
++++ b/core/java/com/mediatek/perfservice/IPerfServiceWrapper.java
+@@ -0,0 +1,90 @@
++package com.mediatek.perfservice;
++
++//import android.os.Bundle;
++
++public interface IPerfServiceWrapper {
++
++    public static final int SCN_NONE       = 0;
++    public static final int SCN_APP_SWITCH = 1; /* apply for both launch/exit */
++    public static final int SCN_APP_ROTATE = 2;
++    public static final int SCN_APP_TOUCH       = 3;
++    public static final int SCN_DONT_USE1       = 4;
++    public static final int SCN_SW_FRAME_UPDATE = 5;
++    public static final int SCN_APP_LAUNCH      = 6;
++    public static final int SCN_GAMING          = 7;
++    public static final int SCN_MAX             = 8; /* should be (last scenario + 1) */
++
++    public static final int STATE_PAUSED    = 0;
++    public static final int STATE_RESUMED   = 1;
++    public static final int STATE_DESTROYED = 2;
++    public static final int STATE_DEAD      = 3;
++    public static final int STATE_STOPPED   = 4;
++
++    public static final int DISPLAY_TYPE_GAME   = 0;
++    public static final int DISPLAY_TYPE_OTHERS = 1;
++
++    public static final int NOTIFY_USER_TYPE_PID = 0;
++    public static final int NOTIFY_USER_TYPE_FRAME_UPDATE = 1;
++    public static final int NOTIFY_USER_TYPE_DISPLAY_TYPE = 2;
++    public static final int NOTIFY_USER_TYPE_SCENARIO_ON  = 3;
++    public static final int NOTIFY_USER_TYPE_SCENARIO_OFF = 4;
++
++    public static final int CMD_GET_CPU_FREQ_LEVEL_COUNT        = 0;
++    public static final int CMD_GET_CPU_FREQ_LITTLE_LEVEL_COUNT = 1;
++    public static final int CMD_GET_CPU_FREQ_BIG_LEVEL_COUNT    = 2;
++    public static final int CMD_GET_GPU_FREQ_LEVEL_COUNT        = 3;
++    public static final int CMD_GET_MEM_FREQ_LEVEL_COUNT        = 4;
++
++    public static final int CMD_SET_CPU_CORE_MIN            = 0;
++    public static final int CMD_SET_CPU_CORE_MAX            = 1;
++    public static final int CMD_SET_CPU_CORE_BIG_LITTLE_MIN = 2;
++    public static final int CMD_SET_CPU_CORE_BIG_LITTLE_MAX = 3;
++    public static final int CMD_SET_CPU_FREQ_MIN            = 4;
++    public static final int CMD_SET_CPU_FREQ_MAX            = 5;
++    public static final int CMD_SET_CPU_FREQ_BIG_LITTLE_MIN = 6;
++    public static final int CMD_SET_CPU_FREQ_BIG_LITTLE_MAX = 7;
++    public static final int CMD_SET_GPU_FREQ_MIN            = 8;
++    public static final int CMD_SET_GPU_FREQ_MAX            = 9;
++    public static final int CMD_SET_MEM_FREQ_MIN            = 10;
++    public static final int CMD_SET_MEM_FREQ_MAX            = 11;
++    public static final int CMD_SET_SCREEN_OFF_STATE        = 12;
++    public static final int CMD_SET_CPUFREQ_HISPEED_FREQ    = 13;
++    public static final int CMD_SET_CPUFREQ_MIN_SAMPLE_TIME = 14;
++    public static final int CMD_SET_CPUFREQ_ABOVE_HISPEED_DELAY = 15;
++    public static final int CMD_SET_VCORE                       = 16;
++
++    public void boostEnable(int scenario);
++    public void boostDisable(int scenario);
++    public void boostEnableTimeout(int scenario, int timeout);
++    public void boostEnableTimeoutMs(int scenario, int timeout_ms);
++    public void notifyAppState(String packName, String className, int state, int pid);
++
++    public int  userReg(int scn_core, int scn_freq);
++    public int  userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little);
++    public void userUnreg(int handle);
++
++    public int  userGetCapability(int cmd);
++
++    public int  userRegScn();
++    public void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4);
++    public void userUnregScn(int handle);
++
++    public void userEnable(int handle);
++    public void userEnableTimeout(int handle, int timeout);
++    public void userEnableTimeoutMs(int handle, int timeout_ms);
++    public void userDisable(int handle);
++
++    public void userResetAll();
++    public void userDisableAll();
++    public void userRestoreAll();
++
++    public void dumpAll();
++
++    public void setFavorPid(int pid);
++    public void restorePolicy(int pid);
++    public void notifyFrameUpdate(int level);
++    public void notifyDisplayType(int type);
++    public String getPackName();
++    public int getLastBoostPid();
++    public void notifyUserStatus(int type, int status);
++}
+diff --git a/core/java/com/mediatek/perfservice/PerfServiceWrapper.java b/core/java/com/mediatek/perfservice/PerfServiceWrapper.java
+new file mode 100755
+index 00000000..49429758
+--- /dev/null
++++ b/core/java/com/mediatek/perfservice/PerfServiceWrapper.java
+@@ -0,0 +1,384 @@
++
++package com.mediatek.perfservice;
++
++import android.content.Context;
++import android.os.IBinder;
++import android.os.RemoteException;
++import android.os.ServiceManager;
++import android.util.Log;
++
++
++public class PerfServiceWrapper implements IPerfServiceWrapper {
++
++    private static final String TAG = "PerfServiceWrapper";
++
++    private IPerfService sService = null;
++    private Context mContext;
++
++    private int inited = 0;
++
++    private int setTid = 0;
++    private long mPreviousTime = 0;
++    private static final int RENDER_THREAD_UPDATE_DURATION = 400;
++
++    public static native int nativeGetPid();
++    public static native int nativeGetTid();
++
++    private void init() {
++        if (inited == 0) {
++            IBinder b = ServiceManager.checkService(Context.MTK_PERF_SERVICE);
++            if (b != null) {
++                sService = IPerfService.Stub.asInterface(b);
++                if (sService != null)
++                    inited = 1;
++                else
++                    log("ERR: getService() sService is still null..");
++            }
++        }
++    }
++
++    public PerfServiceWrapper(Context context) {
++        mContext = context;
++        init();
++    }
++
++    public void boostEnable(int scenario) {
++        //log("boostEnable");
++        try {
++            init();
++            if (sService != null)
++                sService.boostEnable(scenario);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in boostEnable:" + e);
++        }
++    }
++
++    public void boostDisable(int scenario) {
++        //log("boostEnable");
++        try {
++            init();
++            if (sService != null)
++                sService.boostDisable(scenario);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in boostDisable:" + e);
++        }
++    }
++
++    public void boostEnableTimeout(int scenario, int timeout) {
++        //log("boostEnable");
++        try {
++            init();
++            if (sService != null)
++                sService.boostEnableTimeout(scenario, timeout);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in boostEnableTimeout:" + e);
++        }
++    }
++
++    public void boostEnableTimeoutMs(int scenario, int timeout_ms) {
++        //log("boostEnableTimeoutMs");
++        try {
++            init();
++            if (sService != null)
++                sService.boostEnableTimeoutMs(scenario, timeout_ms);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in boostEnableTimeoutMs:" + e);
++        }
++    }
++
++    public void notifyAppState(String packName, String className, int state, int pid) {
++        //log("boostEnable");
++        try {
++            init();
++            if (sService != null)
++                sService.notifyAppState(packName, className, state, pid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in notifyAppState:" + e);
++        }
++    }
++
++    public int userReg(int scn_core, int scn_freq) {
++        int handle = -1;
++        //log("[userReg] - "+scn_core+", "+scn_freq);
++        try {
++            init();
++            int pid = nativeGetPid();
++            int tid = nativeGetTid();
++            if (sService != null)
++                handle = sService.userReg(scn_core, scn_freq, pid, tid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userReg:" + e);
++        }
++        //log("[userReg] - handle:"+handle);
++        return handle;
++    }
++
++    public int userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little) {
++        int handle = -1;
++        //log("[userRegBigLittle] - "+scn_core_big+", "+scn_freq_big+", "+scn_core_little+", "+scn_freq_little);
++        try {
++            init();
++            int pid = nativeGetPid();
++            int tid = nativeGetTid();
++            if (sService != null)
++                handle = sService.userRegBigLittle(scn_core_big, scn_freq_big, scn_core_little, scn_freq_little, pid, tid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userRegBigLittle:" + e);
++        }
++        //log("[userRegBigLittle] - handle:"+handle);
++        return handle;
++    }
++
++    public void userUnreg(int handle) {
++        //log("[userUnreg] - "+handle);
++        try {
++            init();
++            if (sService != null)
++                sService.userUnreg(handle);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userUnreg:" + e);
++        }
++    }
++
++    public int userGetCapability(int cmd) {
++        int value = -1;
++        //log("[userGetCapability] - "+cmd);
++        try {
++            init();
++            if (sService != null)
++                value = sService.userGetCapability(cmd);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userGetCapability:" + e);
++        }
++        //log("[userGetCapability] - value:"+value);
++        return value;
++    }
++
++    public int userRegScn() {
++        int handle = -1;
++        //log("[userRegScn]");
++        try {
++            init();
++            int pid = nativeGetPid();
++            int tid = nativeGetTid();
++            if (sService != null)
++                handle = sService.userRegScn(pid, tid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userRegScn:" + e);
++        }
++        //log("[userRegScn] - handle:"+handle);
++        return handle;
++    }
++
++    public void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4) {
++        //log("userRegScnConfig");
++        try {
++            init();
++            if (sService != null)
++                sService.userRegScnConfig(handle, cmd, param_1, param_2, param_3, param_4);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userRegScnConfig:" + e);
++        }
++    }
++
++    public void userUnregScn(int handle) {
++        //log("userUnregScn");
++        try {
++            init();
++            if (sService != null)
++                sService.userUnregScn(handle);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userUnregScn:" + e);
++        }
++    }
++
++    public void userEnable(int handle) {
++        //log("[userEnable] - "+handle);
++        try {
++            init();
++            if (sService != null)
++                sService.userEnable(handle);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userEnable:" + e);
++        }
++    }
++
++    public void userDisable(int handle) {
++        //log("[userDisable] - "+handle);
++        try {
++            init();
++            if (sService != null)
++                sService.userDisable(handle);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userDisable:" + e);
++        }
++    }
++
++    public void userEnableTimeout(int handle, int timeout) {
++        //log("[userEnableTimeout] - "+handle+", "+timeout);
++        try {
++            init();
++            if (sService != null)
++                sService.userEnableTimeout(handle, timeout);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userEnableTimeout:" + e);
++        }
++    }
++
++    public void userEnableTimeoutMs(int handle, int timeout_ms) {
++        //log("[userEnableTimeoutMs] - "+handle+", "+timeout);
++        try {
++            init();
++            if (sService != null)
++                sService.userEnableTimeoutMs(handle, timeout_ms);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userEnableTimeoutMs:" + e);
++        }
++    }
++
++    public void userResetAll() {
++        try {
++            init();
++            if (sService != null)
++                sService.userResetAll();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userResetAll:" + e);
++        }
++    }
++
++    public void userDisableAll() {
++        try {
++            init();
++            if (sService != null)
++                sService.userDisableAll();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userDisableAll:" + e);
++        }
++    }
++
++    public void userRestoreAll() {
++        try {
++            init();
++            if (sService != null)
++                sService.userRestoreAll();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in userRestoreAll:" + e);
++        }
++    }
++
++    public void dumpAll() {
++        try {
++            init();
++            if (sService != null)
++                sService.dumpAll();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in dumpAll:" + e);
++        }
++    }
++
++    public void setFavorPid(int pid) {
++        //log("userUnregScn");
++        try {
++            init();
++            if (sService != null)
++                sService.setFavorPid(pid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in setFavorPid:" + e);
++        }
++    }
++
++    public void restorePolicy(int pid) {
++        //log("RestorePolicy");
++        try {
++            init();
++            if (sService != null)
++                sService.restorePolicy(pid);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in restorePolicy:" + e);
++        }
++    }
++
++    public void notifyFrameUpdate(int level) {
++        //log("notifyFrameUpdate");
++        final long nowTime = System.currentTimeMillis();
++
++        try {
++            init();
++
++            if (setTid == 0) {
++                level = nativeGetTid();
++                setTid = 1;
++            }
++
++            if (mPreviousTime == 0 || (nowTime - mPreviousTime) > RENDER_THREAD_UPDATE_DURATION) {
++                //log("notifyFrameUpdate - mPreviousTime:" + mPreviousTime + ", nowTime:" + nowTime);
++                if (sService != null)
++                    sService.notifyFrameUpdate(level);
++                mPreviousTime = nowTime;
++            }
++
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in notifyFrameUpdate:" + e);
++        }
++    }
++
++    public void notifyDisplayType(int type) {
++        //log("notifyDisplayType");
++        try {
++            init();
++
++            if (sService != null)
++                sService.notifyDisplayType(type);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in notifyDisplayType:" + e);
++        }
++    }
++
++    public String getPackName() {
++        String handle ="";
++        //log("[userRegScn]");
++        try {
++            init();
++            if(sService != null)
++                handle = sService.getPackName();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in getPackName:" + e);
++        }
++        //log("[userRegScn] - handle:"+handle);
++        return handle;
++    }
++
++    public int getLastBoostPid() {
++        int handle = 0;
++        //log("[userRegScn]");
++        try {
++            init();
++            if(sService != null)
++                handle = sService.getLastBoostPid();
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in getLastBoostPid:" + e);
++        }
++        //log("[userRegScn] - handle:"+handle);
++        return handle;
++    }
++
++    public void notifyUserStatus(int type, int status) {
++        //log("notifyDisplayType");
++        try {
++            init();
++
++            if (sService != null)
++                sService.notifyUserStatus(type, status);
++        } catch (RemoteException e) {
++            loge("ERR: RemoteException in notifyUserStatus:" + e);
++        }
++    }
++
++    private void log(String info) {
++        Log.d("@M_" + TAG, "[PerfServiceWrapper] " + info + " ");
++    }
++
++    private void loge(String info) {
++        Log.e("@M_" + TAG, "[PerfServiceWrapper] ERR: " + info + " ");
++    }
++}
+diff --git a/core/jni/Android.mk b/core/jni/Android.mk
+index 39bb3782..a892cf21 100644
+--- a/core/jni/Android.mk
++++ b/core/jni/Android.mk
+@@ -181,6 +181,8 @@ LOCAL_SRC_FILES:= \
+     com_android_internal_util_VirtualRefBasePtr.cpp \
+     com_android_internal_view_animation_NativeInterpolatorFactoryHelper.cpp
+ 
++LOCAL_SRC_FILES += com_mediatek_perfservice_PerfServiceWrapper.cpp
++
+ LOCAL_C_INCLUDES += \
+     $(JNI_H_INCLUDE) \
+     $(LOCAL_PATH)/android/graphics \
+diff --git a/core/jni/AndroidRuntime.cpp b/core/jni/AndroidRuntime.cpp
+index 9acdab48..9b49e755 100644
+--- a/core/jni/AndroidRuntime.cpp
++++ b/core/jni/AndroidRuntime.cpp
+@@ -193,6 +193,8 @@ extern int register_com_android_internal_net_NetworkStatsFactory(JNIEnv *env);
+ extern int register_com_android_internal_os_Zygote(JNIEnv *env);
+ extern int register_com_android_internal_util_VirtualRefBasePtr(JNIEnv *env);
+ 
++extern int register_com_mediatek_perfservice_PerfServiceWrapper(JNIEnv* env);
++
+ static AndroidRuntime* gCurRuntime = NULL;
+ 
+ /*
+@@ -1310,6 +1312,7 @@ static const RegJNIRec gRegJNI[] = {
+     REG_JNI(register_android_os_SystemClock),
+     REG_JNI(register_android_util_EventLog),
+     REG_JNI(register_android_util_Log),
++    REG_JNI(register_com_mediatek_perfservice_PerfServiceWrapper),
+     REG_JNI(register_android_content_AssetManager),
+     REG_JNI(register_android_content_StringBlock),
+     REG_JNI(register_android_content_XmlBlock),
+diff --git a/core/jni/com_mediatek_perfservice_PerfServiceWrapper.cpp b/core/jni/com_mediatek_perfservice_PerfServiceWrapper.cpp
+new file mode 100644
+index 00000000..82319cd0
+--- /dev/null
++++ b/core/jni/com_mediatek_perfservice_PerfServiceWrapper.cpp
+@@ -0,0 +1,43 @@
++#define LOG_TAG "PerfService"
++#include "utils/Log.h"
++
++#include <stdio.h>
++#include <unistd.h>
++
++#include "jni.h"
++#include "JNIHelp.h"
++#include "android_runtime/AndroidRuntime.h"
++
++namespace android
++{
++
++static int
++android_server_GetPid(JNIEnv *env, jobject thiz)
++{
++    return (int)getpid();
++}
++
++static int
++android_server_GetTid(JNIEnv *env, jobject thiz)
++{
++    return (int)gettid();
++}
++
++static JNINativeMethod sMethods[] = {
++    {"nativeGetPid",   "()I",   (int *)android_server_GetPid},
++    {"nativeGetTid",   "()I",   (int *)android_server_GetTid},
++};
++
++int register_com_mediatek_perfservice_PerfServiceWrapper(JNIEnv* env)
++{
++    jclass clazz = env->FindClass("com/mediatek/perfservice/PerfServiceWrapper");
++
++    if (clazz == NULL) {
++        ALOGE("Can't find com/mediatek/perfservice/PerfServiceWrapper");
++        return -1;
++    }
++
++    return android::AndroidRuntime::registerNativeMethods(env, "com/mediatek/perfservice/PerfServiceWrapper", sMethods, NELEM(sMethods));
++}
++
++}
+diff --git a/libs/hwui/Android.common.mk b/libs/hwui/Android.common.mk
+index 38e8be90..a73cdf79 100644
+--- a/libs/hwui/Android.common.mk
++++ b/libs/hwui/Android.common.mk
+@@ -89,6 +89,9 @@ LOCAL_C_INCLUDES += \
+ LOCAL_CFLAGS += -DEGL_EGLEXT_PROTOTYPES -DGL_GLEXT_PROTOTYPES
+ LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libEGL libGLESv2 libskia libui libgui
+ 
++LOCAL_C_INCLUDES += \
++    $(MTK_PATH_SOURCE)/hardware/perfservice/perfservicenative
++
+ ifneq (false,$(ANDROID_ENABLE_RENDERSCRIPT))
+     LOCAL_CFLAGS += -DANDROID_ENABLE_RENDERSCRIPT
+     LOCAL_SHARED_LIBRARIES += libRS libRScpp
+diff --git a/libs/hwui/renderthread/CanvasContext.cpp b/libs/hwui/renderthread/CanvasContext.cpp
+index 57e5832f..623cbd7a 100644
+--- a/libs/hwui/renderthread/CanvasContext.cpp
++++ b/libs/hwui/renderthread/CanvasContext.cpp
+@@ -32,6 +32,12 @@
+ #include <cutils/properties.h>
+ #include <private/hwui/DrawGlInfo.h>
+ 
++/// M: PerfBoost include
++#include <dlfcn.h>
++#include "PerfServiceNative.h"
++void (*perfNotifyFrameUpdate)(int) = NULL;
++typedef void (*notify_frame_update)(int);
++
+ #define TRIM_MEMORY_COMPLETE 80
+ #define TRIM_MEMORY_UI_HIDDEN 20
+ 
+@@ -50,6 +56,16 @@ CanvasContext::CanvasContext(RenderThread& thread, bool translucent,
+         , mProfiler(mFrames) {
+     mRenderThread.renderState().registerCanvasContext(this);
+     mProfiler.setDensity(mRenderThread.mainDisplayInfo().density);
++
++    /// M: PerfBoost
++    void *handle, *func;
++    handle = dlopen("libperfservicenative.so", RTLD_NOW);
++
++    func = dlsym(handle, "PerfServiceNative_notifyFrameUpdate");
++    perfNotifyFrameUpdate = reinterpret_cast<notify_frame_update>(func);
++    if (perfNotifyFrameUpdate == NULL) {
++        ALOGE("PerfServiceNative_notifyFrameUpdate init fail!");
++    }
+ }
+ 
+ CanvasContext::~CanvasContext() {
+@@ -225,6 +241,9 @@ void CanvasContext::draw() {
+     LOG_ALWAYS_FATAL_IF(!mCanvas || mEglSurface == EGL_NO_SURFACE,
+             "drawRenderNode called on a context with no canvas or surface!");
+ 
++    /// M: PerfBoost
++    if(perfNotifyFrameUpdate) perfNotifyFrameUpdate(0);
++
+     SkRect dirty;
+     mDamageAccumulator.finish(&dirty);
+ 
+diff --git a/opengl/java/android/opengl/GLSurfaceView.java b/opengl/java/android/opengl/GLSurfaceView.java
+index 359a7a97..4eac1212 100644
+--- a/opengl/java/android/opengl/GLSurfaceView.java
++++ b/opengl/java/android/opengl/GLSurfaceView.java
+@@ -38,6 +38,11 @@ import android.util.Log;
+ import android.view.SurfaceHolder;
+ import android.view.SurfaceView;
+ 
++/// M:PerfBoost include @{
++import com.mediatek.perfservice.IPerfServiceWrapper;
++import com.mediatek.perfservice.PerfServiceWrapper;
++/// @}
++
+ /**
+  * An implementation of SurfaceView that uses the dedicated surface for
+  * displaying OpenGL rendering.
+@@ -1227,6 +1232,10 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
+             mRequestRender = true;
+             mRenderMode = RENDERMODE_CONTINUOUSLY;
+             mGLSurfaceViewWeakRef = glSurfaceViewWeakRef;
++
++            /// M:PerfBoost include @{
++            mPerfServiceWrapper = new PerfServiceWrapper(null);
++            /// @}
+         }
+ 
+         @Override
+@@ -1532,6 +1541,9 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
+                         if (view != null) {
+                             try {
+                                 Trace.traceBegin(Trace.TRACE_TAG_VIEW, "onDrawFrame");
++                                /// M:PerfBoost include @{
++                                mPerfServiceWrapper.notifyFrameUpdate(0);
++                                /// @}
+                                 view.mRenderer.onDrawFrame(gl);
+                             } finally {
+                                 Trace.traceEnd(Trace.TRACE_TAG_VIEW);
+@@ -1781,6 +1793,9 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
+          */
+         private WeakReference<GLSurfaceView> mGLSurfaceViewWeakRef;
+ 
++        /// M:PerfBoost include @{
++        private IPerfServiceWrapper mPerfServiceWrapper;
++        /// @}
+     }
+ 
+     static class LogWriter extends Writer {
+diff --git a/services/core/java/com/android/server/am/ActivityManagerDebugConfig.java b/services/core/java/com/android/server/am/ActivityManagerDebugConfig.java
+index 16c959fa..3b390cb6 100644
+--- a/services/core/java/com/android/server/am/ActivityManagerDebugConfig.java
++++ b/services/core/java/com/android/server/am/ActivityManagerDebugConfig.java
+@@ -89,6 +89,10 @@ class ActivityManagerDebugConfig {
+     static final boolean DEBUG_VISIBLE_BEHIND = DEBUG_ALL_ACTIVITIES || false;
+     static final boolean DEBUG_USAGE_STATS = DEBUG_ALL || false;
+ 
++    /// M: MTK debug flags @{
++    static boolean DEBUG_PERFSRV = DEBUG_ALL || false;
++    /// M: MTK debug flags @}
++
+     static final String POSTFIX_ADD_REMOVE = (APPEND_CATEGORY_NAME) ? "_AddRemove" : "";
+     static final String POSTFIX_APP = (APPEND_CATEGORY_NAME) ? "_App" : "";
+     static final String POSTFIX_BACKUP = (APPEND_CATEGORY_NAME) ? "_Backup" : "";
+diff --git a/services/core/java/com/android/server/am/ActivityManagerService.java b/services/core/java/com/android/server/am/ActivityManagerService.java
+index 6c076d06..cba75506 100755
+--- a/services/core/java/com/android/server/am/ActivityManagerService.java
++++ b/services/core/java/com/android/server/am/ActivityManagerService.java
+@@ -275,6 +275,9 @@ import java.text.SimpleDateFormat;
+ 
+ import org.cyanogenmod.internal.util.ThemeUtils;
+ 
++import com.mediatek.perfservice.IPerfServiceWrapper; /// M: PerfService
++import com.mediatek.perfservice.PerfServiceWrapper;  /// M: PerfService
++
+ public final class ActivityManagerService extends ActivityManagerNative
+         implements Watchdog.Monitor, BatteryStatsImpl.BatteryCallback {
+ 
+@@ -472,6 +475,10 @@ public final class ActivityManagerService extends ActivityManagerNative
+     // so that dispatch of foreground broadcasts gets precedence.
+     final BroadcastQueue[] mBroadcastQueues = new BroadcastQueue[2];
+ 
++    /// M: PerfBoost include @ {
++    IPerfServiceWrapper mPerfService = null;
++    /// @}
++
+     BroadcastQueue broadcastQueueForIntent(Intent intent) {
+         final boolean isFg = (intent.getFlags() & Intent.FLAG_RECEIVER_FOREGROUND) != 0;
+         if (DEBUG_BROADCAST_BACKGROUND) Slog.i(TAG_BROADCAST,
+@@ -1362,6 +1369,9 @@ public final class ActivityManagerService extends ActivityManagerNative
+         }
+     }
+ 
++    final ArrayList<IActivityStateNotifier> mActStateNotifiers = new ArrayList<IActivityStateNotifier>();   /// M: activity state notifier
++
++
+     static final int SHOW_ERROR_MSG = 1;
+     static final int SHOW_NOT_RESPONDING_MSG = 2;
+     static final int SHOW_FACTORY_ERROR_MSG = 3;
+@@ -19405,6 +19415,16 @@ public final class ActivityManagerService extends ActivityManagerNative
+                     + " type=" + app.adjType + " source=" + app.adjSource
+                     + " target=" + app.adjTarget);
+         }
++        /// M: Set main thread pid to PerfService @{
++        if ("top-activity".equals(app.adjType)) {
++            if (mPerfService == null) {
++                mPerfService = new PerfServiceWrapper(null);
++            }
++            if (mPerfService != null) {
++                mPerfService.setFavorPid(app.pid);
++            }
++        }
++        /// @}
+ 
+         return success;
+     }
+@@ -21351,4 +21371,15 @@ public final class ActivityManagerService extends ActivityManagerNative
+             }
+         }
+     }
++
++    /*
++     * M: activity state notifier
++     */
++    public void registerActivityStateNotifier(IActivityStateNotifier notifier) {
++        Slog.i(TAG, "registerActivityStateNotifier");
++        if (!mActStateNotifiers.contains(notifier)) {
++            mActStateNotifiers.add(notifier);
++        }
++    }
++
+ }
+diff --git a/services/core/java/com/android/server/am/ActivityRecord.java b/services/core/java/com/android/server/am/ActivityRecord.java
+index 3de20095..2b74c4a4 100755
+--- a/services/core/java/com/android/server/am/ActivityRecord.java
++++ b/services/core/java/com/android/server/am/ActivityRecord.java
+@@ -1050,6 +1050,11 @@ final class ActivityRecord {
+                 }
+             }
+             service.scheduleAppGcsLocked();
++
++            /// M: PerfBoost feature @{
++            ActivityStack stack = task.stack;
++            stack.perfBoostPause();
++            /// @}
+         }
+     }
+ 
+diff --git a/services/core/java/com/android/server/am/ActivityStack.java b/services/core/java/com/android/server/am/ActivityStack.java
+index f676db97..2ff3a2e9 100644
+--- a/services/core/java/com/android/server/am/ActivityStack.java
++++ b/services/core/java/com/android/server/am/ActivityStack.java
+@@ -83,6 +83,11 @@ import java.util.List;
+ import java.util.Objects;
+ import java.util.Set;
+ 
++import android.os.SystemProperties;
++
++import com.mediatek.perfservice.IPerfServiceWrapper; /// M: PerfService
++import com.mediatek.perfservice.PerfServiceWrapper; /// M: PerfService
++
+ /**
+  * State and management of a single stack of activities.
+  */
+@@ -253,6 +258,13 @@ final class ActivityStack {
+      * and the stack was previously resized. */
+     private boolean mForcedFullscreen = false;
+ 
++    /// M: PerfBoost include @ {
++    static final int BOOST_ENABLE_TIMEOUT = 2000;
++    IPerfServiceWrapper mPerfService = null;
++    private final boolean mEnhancedBoost =
++            "1".equals(SystemProperties.get("ro.mtk_perf_response_time"));
++    /// @}
++
+     static final int PAUSE_TIMEOUT_MSG = ActivityManagerService.FIRST_ACTIVITY_STACK_MSG + 1;
+     static final int DESTROY_TIMEOUT_MSG = ActivityManagerService.FIRST_ACTIVITY_STACK_MSG + 2;
+     static final int LAUNCH_TICK_MSG = ActivityManagerService.FIRST_ACTIVITY_STACK_MSG + 3;
+@@ -1745,6 +1757,10 @@ final class ActivityStack {
+ 
+         mStackSupervisor.setLaunchSource(next.info.applicationInfo.uid);
+ 
++        /// M: PerfBoost @{
++        perfBoostResume();
++        /// @}
++
+         // We need to start pausing the current activity so the top one
+         // can be resumed...
+         boolean dontWaitForPause = (next.info.flags&ActivityInfo.FLAG_RESUME_WHILE_PAUSING) != 0;
+@@ -4486,4 +4502,42 @@ final class ActivityStack {
+             mTaskHistory.get(taskNdx).setLockTaskAuth();
+         }
+     }
++
++    /// M: PerfBoost feature @{
++    private void perfBoostResume() {
++        if (mPerfService == null) {
++            mPerfService = new PerfServiceWrapper(null);
++        }
++
++        if (mPerfService != null) {
++            Trace.asyncTraceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, "amPerfBoost", 0);
++            if (DEBUG_PERFSRV) {
++                Slog.d(TAG, "boostEnableTimeoutMs(" +
++                        IPerfServiceWrapper.SCN_APP_SWITCH + ") cross app");
++            }
++            mPerfService.boostEnableTimeoutMs(IPerfServiceWrapper.SCN_APP_SWITCH,
++                    BOOST_ENABLE_TIMEOUT);
++        } else {
++            Slog.e(TAG, "PerfService is not ready!");
++        }
++    }
++
++    public void perfBoostPause() {
++        if (mPerfService == null) {
++            mPerfService = new PerfServiceWrapper(null);
++        }
++
++        if (mPerfService != null) {
++            if (DEBUG_PERFSRV) {
++                Slog.d(TAG, "boostDisable(" +
++                        IPerfServiceWrapper.SCN_APP_SWITCH + ") cross app");
++            }
++            mPerfService.boostDisable(IPerfServiceWrapper.SCN_APP_SWITCH);
++            Trace.asyncTraceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER, "amPerfBoost", 0);
++        } else {
++            Slog.e(TAG, "perfBoostPause, PerfService is not ready!");
++        }
++    }
++    /// @}
++
+ }
+diff --git a/services/core/java/com/android/server/am/IActivityStateNotifier.java b/services/core/java/com/android/server/am/IActivityStateNotifier.java
+new file mode 100644
+index 00000000..db7b8d52
+--- /dev/null
++++ b/services/core/java/com/android/server/am/IActivityStateNotifier.java
+@@ -0,0 +1,32 @@
++package com.android.server.am;
++
++import java.util.HashSet;
++
++public interface IActivityStateNotifier {
++
++    public enum ActivityState {
++        Paused,
++        Resumed,
++        Destroyed,
++        Stopped
++    }
++
++    /**
++     * Notify activity state change.
++     *
++     * @param packageName The target package name.
++     * @param pid The process id package belongs to.
++     * @param className The class name of the package.
++     * @param actState Current lifecycle state of the package.
++     */
++    public void notifyActivityState(String packageName, int pid,
++            String className, ActivityState actState);
++
++    /**
++     * Notify the process of activity has died.
++     *
++     * @param pid The process id has died.
++     * @param packageList The whole packages runs on the process.
++     */
++    public void notifyAppDied(int pid, HashSet<String> packageList);
++}
+diff --git a/services/core/java/com/android/server/wm/WindowManagerService.java b/services/core/java/com/android/server/wm/WindowManagerService.java
+index fe178948..06592658 100644
+--- a/services/core/java/com/android/server/wm/WindowManagerService.java
++++ b/services/core/java/com/android/server/wm/WindowManagerService.java
+@@ -192,6 +192,9 @@ import static android.view.WindowManager.LayoutParams.TYPE_WALLPAPER;
+ import static android.view.WindowManagerPolicy.FINISH_LAYOUT_REDO_WALLPAPER;
+ import static com.android.server.am.ActivityStackSupervisor.HOME_STACK_ID;
+ 
++import com.mediatek.perfservice.IPerfServiceWrapper; /// M: PerfService
++import com.mediatek.perfservice.PerfServiceWrapper; /// M: PerfService
++
+ /** {@hide} */
+ public class WindowManagerService extends IWindowManager.Stub
+         implements Watchdog.Monitor, WindowManagerPolicy.WindowManagerFuncs {
+@@ -10953,6 +10956,15 @@ public class WindowManagerService extends IWindowManager.Stub
+                 screenRotationAnimation.kill();
+             }
+ 
++            /// M: PerfBoost enable
++            if (!mIsPerfBoostEnable) {
++                if (mPerfService == null) {
++                    mPerfService = new PerfServiceWrapper(null);
++                }
++                mPerfService.boostEnable(IPerfServiceWrapper.SCN_APP_ROTATE);
++                mIsPerfBoostEnable = true;
++            }
++
+             // Check whether the current screen contains any secure content.
+             boolean isSecure = false;
+             final WindowList windows = getDefaultWindowListLocked();
+@@ -11014,6 +11026,15 @@ public class WindowManagerService extends IWindowManager.Stub
+                 mAnimator.getScreenRotationAnimationLocked(displayId);
+         if (CUSTOM_SCREEN_ROTATION && screenRotationAnimation != null
+                 && screenRotationAnimation.hasScreenshot()) {
++            /// M:PerfBoost disable
++            if (mIsPerfBoostEnable) {
++                if (mPerfService == null) {
++                    mPerfService = new PerfServiceWrapper(null);
++                }
++                mPerfService.boostDisable(IPerfServiceWrapper.SCN_APP_ROTATE);
++                mIsPerfBoostEnable = false;
++            }
++
+             if (DEBUG_ORIENTATION) Slog.i(TAG, "**** Dismissing screen rotation animation");
+             // TODO(multidisplay): rotation on main screen only.
+             DisplayInfo displayInfo = displayContent.getDisplayInfo();
+@@ -12165,6 +12186,10 @@ public class WindowManagerService extends IWindowManager.Stub
+         }
+     }
+ 
++    /// M: for PerfBoost feature
++    private boolean mIsPerfBoostEnable = false;
++    private IPerfServiceWrapper mPerfService = null;
++
+     void updateNonSystemOverlayWindowsVisibilityIfNeeded(WindowState win, boolean surfaceShown) {
+         if (!win.hideNonSystemOverlayWindowsWhenVisible()
+                 && !mHidingNonSystemOverlayWindows.contains(win)) {
+diff --git a/services/core/java/com/mediatek/perfservice/PerfServiceImpl.java b/services/core/java/com/mediatek/perfservice/PerfServiceImpl.java
+new file mode 100755
+index 00000000..6a9d66e2
+--- /dev/null
++++ b/services/core/java/com/mediatek/perfservice/PerfServiceImpl.java
+@@ -0,0 +1,192 @@
++
++package com.mediatek.perfservice;
++
++
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++
++import android.util.Log;
++
++public class PerfServiceImpl extends IPerfService.Stub {
++
++    private static final String TAG = "PerfService";
++
++    private IPerfServiceManager perfServiceMgr;
++    final   Context mContext;
++
++    class PerfServiceBroadcastReceiver extends android.content.BroadcastReceiver {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            final String action = intent.getAction();
++            if (Intent.ACTION_SCREEN_OFF.equals(action)) {
++                log("Intent.ACTION_SCREEN_OFF");
++                perfServiceMgr.userDisableAll();
++                return;
++            }
++            else if (Intent.ACTION_SCREEN_ON.equals(action)) {
++                log("Intent.ACTION_SCREEN_ON");
++                perfServiceMgr.userRestoreAll();
++                return;
++            }
++            else {
++                log("Unexpected intent " + intent);
++            }
++        }
++    }
++
++    public PerfServiceImpl(Context context, IPerfServiceManager pm) {
++        perfServiceMgr = pm;
++        mContext = context;
++
++        final IntentFilter broadcastFilter = new IntentFilter();
++        broadcastFilter.addAction(Intent.ACTION_SCREEN_OFF);
++        broadcastFilter.addAction(Intent.ACTION_SCREEN_ON);
++        mContext.registerReceiver(new PerfServiceBroadcastReceiver(), broadcastFilter);
++
++    }
++
++    public void boostEnable(int scenario) {
++        //log("boostEnable");
++        perfServiceMgr.boostEnable(scenario);
++    }
++
++    public void boostDisable(int scenario) {
++        //log("boostDisable");
++        perfServiceMgr.boostDisable(scenario);
++    }
++
++    public void boostEnableTimeout(int scenario, int timeout) {
++        //log("boostEnableTimeout");
++        perfServiceMgr.boostEnableTimeout(scenario, timeout);
++    }
++
++    public void boostEnableTimeoutMs(int scenario, int timeout_ms) {
++        //log("boostEnableTimeoutMs");
++        perfServiceMgr.boostEnableTimeoutMs(scenario, timeout_ms);
++    }
++
++    public void notifyAppState(java.lang.String packName, java.lang.String className,
++                                                          int state, int pid) {
++        //log("notifyAppState");
++        perfServiceMgr.notifyAppState(packName, className, state, pid);
++    }
++
++    public int userReg(int scn_core, int scn_freq, int pid, int tid) {
++        //log("userReg");
++        return perfServiceMgr.userReg(scn_core, scn_freq, pid, tid);
++    }
++
++    public int userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little, int pid, int tid) {
++        //log("userRegBigLittle");
++        return perfServiceMgr.userRegBigLittle(scn_core_big, scn_freq_big, scn_core_little, scn_freq_little, pid, tid);
++    }
++
++    public void userUnreg(int handle) {
++        //log("userUnreg");
++        perfServiceMgr.userUnreg(handle);
++    }
++
++    public int userGetCapability(int cmd) {
++        //log("userGetCapability");
++        return perfServiceMgr.userGetCapability(cmd);
++    }
++
++    public int userRegScn(int pid, int tid) {
++        //log("userRegScn");
++        return perfServiceMgr.userRegScn(pid, tid);
++    }
++
++    public void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4) {
++        //log("userRegScnConfig");
++        perfServiceMgr.userRegScnConfig(handle, cmd, param_1, param_2, param_3, param_4);
++    }
++
++    public void userUnregScn(int handle) {
++        //log("userUnregScn");
++        perfServiceMgr.userUnregScn(handle);
++    }
++
++    public void userEnable(int handle) {
++        //log("userEnable");
++        perfServiceMgr.userEnable(handle);
++    }
++
++    public void userEnableTimeout(int handle, int timeout) {
++        //log("userEnableTimeout");
++        perfServiceMgr.userEnableTimeout(handle, timeout);
++    }
++
++    public void userEnableTimeoutMs(int handle, int timeout_ms) {
++        //log("userEnableTimeoutMs");
++        perfServiceMgr.userEnableTimeoutMs(handle, timeout_ms);
++    }
++
++    public void userDisable(int handle) {
++        //log("userDisable");
++        perfServiceMgr.userDisable(handle);
++    }
++
++    public void userResetAll() {
++        //log("userDisable");
++        perfServiceMgr.userResetAll();
++    }
++
++    public void userDisableAll() {
++        //log("userDisable");
++        perfServiceMgr.userDisableAll();
++    }
++
++    public void userRestoreAll() {
++        //log("userRestoreAll");
++        perfServiceMgr.userRestoreAll();
++    }
++
++    public void dumpAll() {
++        //log("dumpAll");
++        perfServiceMgr.dumpAll();
++    }
++
++    public void setFavorPid(int pid) {
++        //log("setFavorPid");
++        perfServiceMgr.setFavorPid(pid);
++    }
++
++    public void restorePolicy(int pid) {
++        //log("restorePolicy");
++        perfServiceMgr.restorePolicy(pid);
++    }
++
++    public void notifyFrameUpdate(int level) {
++        //log("notifyFrameUpdate");
++        perfServiceMgr.notifyFrameUpdate(level);
++    }
++
++    public void notifyDisplayType(int type) {
++        //log("notifyDisplayType");
++        perfServiceMgr.notifyDisplayType(type);
++    }
++
++    public String getPackName() {
++        //log("notifyDisplayType");
++        return perfServiceMgr.getPackName();
++    }
++
++    public int getLastBoostPid() {
++        //log("notifyDisplayType");
++        return perfServiceMgr.getLastBoostPid();
++    }
++
++    public void notifyUserStatus(int type, int status) {
++        //log("notifyUserStatus");
++        perfServiceMgr.notifyUserStatus(type, status);
++    }
++
++    private void log(String info) {
++        Log.d("@M_" + TAG, "[PerfService] " + info + " ");
++    }
++
++    private void loge(String info) {
++        Log.e("@M_" + TAG, "[PerfService] ERR: " + info + " ");
++    }
++}
+diff --git a/services/core/java/com/mediatek/perfservice/PerfServiceManager.java b/services/core/java/com/mediatek/perfservice/PerfServiceManager.java
+new file mode 100755
+index 00000000..dcefdf9b
+--- /dev/null
++++ b/services/core/java/com/mediatek/perfservice/PerfServiceManager.java
+@@ -0,0 +1,659 @@
++
++package com.mediatek.perfservice;
++
++import android.os.Handler;
++import android.os.HandlerThread;
++import android.os.Looper;
++import android.os.Message;
++import android.os.Process;
++
++import java.util.ArrayList;
++import java.util.List;
++
++import android.content.Context;
++import android.util.Log;
++
++import dalvik.system.VMRuntime;
++
++public class PerfServiceManager implements IPerfServiceManager {
++    private static final String TAG = "PerfServiceManager";
++    private HandlerThread mHandlerThread;
++    private PerfServiceThreadHandler mHandler;
++    private Context mContext;
++    final List<Integer> mTimeList;
++
++    private boolean bDuringTouch;
++    private boolean bRenderAwareValid; // render aware is only valid within 3 sec.
++    private static final int RENDER_AWARE_DURATION_MS = 3000;
++    private static final int UI_UPDATE_DURATION_MS = 500;
++    private static final int RENDER_BIT = 0x800000;
++    private static final float HEAP_UTILIZATION_DURING_FRAME_UPDATE = 0.5f;
++
++    private int mDisplayType;
++    private VMRuntime mRuntime;
++    private float mDefaultUtilization;
++
++    public static native int nativePerfBoostEnable(int scenario);
++    public static native int nativePerfBoostDisable(int scenario);
++    public static native int nativePerfNotifyAppState(String packName, String className,
++                                                      int state, int pid);
++    public static native int nativePerfUserScnReg(int scn_core, int scn_freq, int pid, int tid);
++    public static native int nativePerfUserScnRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little, int pid, int tid);
++    public static native int nativePerfUserScnUnreg(int handle);
++    public static native int nativePerfUserGetCapability(int cmd);
++    public static native int nativePerfUserRegScn(int pid, int tid);
++    public static native int nativePerfUserRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4);
++    public static native int nativePerfUserUnregScn(int handle);
++    public static native int nativePerfUserScnEnable(int handle);
++    public static native int nativePerfUserScnDisable(int handle);
++    public static native int nativePerfUserScnResetAll();
++    public static native int nativePerfUserScnDisableAll();
++    public static native int nativePerfUserScnRestoreAll();
++    public static native int nativePerfDumpAll();
++    public static native int nativePerfSetFavorPid(int pid);
++    public static native int nativePerfRestorePolicy(int pid);
++    public static native int nativePerfNotifyUserStatus(int type, int status);
++    public static native int nativePerfLevelBoost(int level);
++    public static native int nativePerfNotifyDisplayType(int type);
++    public static native String nativePerfGetPackName();
++    public static native int nativePerfGetLastBoostPid();
++
++    public class PerfServiceAppState {
++        private String mPackName;
++        private String mClassName;
++        private int mState;
++        private int mPid;
++
++        PerfServiceAppState(String packName, String className, int state, int pid) {
++            mPackName = packName;
++            mClassName = className;
++            mState = state;
++            mPid = pid;
++        }
++    }
++
++    //static
++    //{
++    //    Log.w(TAG, "load libperfservice_jni.so");
++    //    System.loadLibrary("perfservice_jni");
++    //}
++
++    public PerfServiceManager(Context context) {
++        super();
++        mContext = context;
++        mHandlerThread = new HandlerThread("PerfServiceManager", Process.THREAD_PRIORITY_FOREGROUND);
++        mHandlerThread.start();
++        Looper looper = mHandlerThread.getLooper();
++        if (looper != null) {
++            mHandler = new PerfServiceThreadHandler(looper);
++        }
++        mTimeList = new ArrayList<Integer>();
++        bDuringTouch = false;
++        bRenderAwareValid = false;
++        mDisplayType = IPerfServiceWrapper.DISPLAY_TYPE_OTHERS;
++        mRuntime = VMRuntime.getRuntime();
++        mDefaultUtilization = mRuntime.getTargetHeapUtilization();
++        log("Created and started PerfService thread");
++    }
++
++    public void systemReady() {
++        log("systemReady, register ACTION_BOOT_COMPLETED");
++    }
++
++    public void boostEnable(int scenario) {
++        //log("boostEnable:" + scenario);
++        if (IPerfServiceWrapper.SCN_APP_TOUCH == scenario) {
++            if (touchEnable() == false)
++                return;
++        }
++        mHandler.stopCheckTimer(scenario);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_BOOST_ENABLE;
++        msg.arg1 = scenario;
++        msg.sendToTarget();
++    }
++
++    public void boostDisable(int scenario) {
++        //log("boostDisable:" + scenario);
++        if (IPerfServiceWrapper.SCN_APP_TOUCH == scenario) {
++            if(touchDisable() == false)
++                return;
++        }
++        mHandler.stopCheckTimer(scenario);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_BOOST_DISABLE;
++        msg.arg1 = scenario;
++        msg.sendToTarget();
++    }
++
++    public void boostEnableTimeout(int scenario, int timeout) {
++        //log("boostEnableTimeout");
++        if (IPerfServiceWrapper.SCN_APP_TOUCH == scenario) {
++            if (touchEnable() == false)
++                return;
++        }
++        mHandler.stopCheckTimer(scenario);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_BOOST_ENABLE_TIMEOUT;
++        msg.arg1 = scenario;
++        msg.arg2 = timeout;
++        msg.sendToTarget();
++    }
++
++    public void boostEnableTimeoutMs(int scenario, int timeout_ms) {
++        //log("boostEnableTimeoutMs");
++        if (IPerfServiceWrapper.SCN_APP_TOUCH == scenario) {
++            if (touchEnable() == false)
++                return;
++        }
++        mHandler.stopCheckTimer(scenario);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_BOOST_ENABLE_TIMEOUT_MS;
++        msg.arg1 = scenario;
++        msg.arg2 = timeout_ms;
++        msg.sendToTarget();
++    }
++
++    public void notifyAppState(String packName, String className, int state, int pid) {
++        //log("notifyAppState");
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_NOTIFY_APP_STATE;
++        msg.obj = new PerfServiceAppState(packName, className, state, pid);
++        msg.sendToTarget();
++    }
++
++    public int userReg(int scn_core, int scn_freq, int pid, int tid) {
++        return nativePerfUserScnReg(scn_core, scn_freq, pid, tid);
++    }
++
++    public int userRegBigLittle(int scn_core_big, int scn_freq_big, int scn_core_little, int scn_freq_little, int pid, int tid) {
++        return nativePerfUserScnRegBigLittle(scn_core_big, scn_freq_big, scn_core_little, scn_freq_little, pid, tid);
++    }
++
++    public void userUnreg(int handle) {
++        nativePerfUserScnUnreg(handle);
++    }
++
++    public int userGetCapability(int cmd) {
++        return nativePerfUserGetCapability(cmd);
++    }
++
++    public int userRegScn(int pid, int tid) {
++        return nativePerfUserRegScn(pid, tid);
++    }
++
++    public void userRegScnConfig(int handle, int cmd, int param_1, int param_2, int param_3, int param_4) {
++        nativePerfUserRegScnConfig(handle, cmd, param_1, param_2, param_3, param_4);
++    }
++
++    public void userUnregScn(int handle) {
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_UNREG_SCN;
++        msg.arg1 = handle;
++        msg.sendToTarget();
++    }
++
++    public void userEnable(int handle) {
++        mHandler.stopCheckUserTimer(handle);
++        nativePerfUserScnEnable(handle);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_ENABLE;
++        msg.arg1 = handle;
++        msg.sendToTarget();
++    }
++
++    public void userDisable(int handle) {
++        mHandler.stopCheckUserTimer(handle);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_DISABLE;
++        msg.arg1 = handle;
++        msg.sendToTarget();
++    }
++
++    public void userEnableTimeout(int handle, int timeout) {
++        mHandler.stopCheckUserTimer(handle);
++        nativePerfUserScnEnable(handle);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_ENABLE_TIMEOUT;
++        msg.arg1 = handle;
++        msg.arg2 = timeout;
++        msg.sendToTarget();
++    }
++
++    public void userEnableTimeoutMs(int handle, int timeout_ms) {
++        mHandler.stopCheckUserTimer(handle);
++        nativePerfUserScnEnable(handle);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_ENABLE_TIMEOUT_MS;
++        msg.arg1 = handle;
++        msg.arg2 = timeout_ms;
++        msg.sendToTarget();
++    }
++
++    public void userResetAll() {
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_RESET_ALL;
++        msg.sendToTarget();
++    }
++
++    public void userDisableAll() {
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_DISABLE_ALL;
++        msg.sendToTarget();
++    }
++
++    public void userRestoreAll() {
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_USER_RESTORE_ALL;
++        msg.sendToTarget();
++    }
++
++    public void dumpAll() {
++        nativePerfDumpAll();
++    }
++
++    public void setFavorPid(int pid) {
++        nativePerfSetFavorPid(pid);
++    }
++
++    public void restorePolicy(int pid) {
++        nativePerfRestorePolicy(pid);
++    }
++
++    public void notifyFrameUpdate(int level) {
++        if (level != 0)
++            nativePerfSetFavorPid(level | RENDER_BIT);
++
++        if(bRenderAwareValid == false)
++            return;
++
++        //log("notifyFrameUpdate - bRenderAwareValid:" + bRenderAwareValid);
++
++        mHandler.stopCheckTimer(IPerfServiceWrapper.SCN_SW_FRAME_UPDATE);
++
++        Message msg = mHandler.obtainMessage();
++        msg.what = PerfServiceThreadHandler.MESSAGE_BOOST_ENABLE_TIMEOUT_MS;
++        msg.arg1 = IPerfServiceWrapper.SCN_SW_FRAME_UPDATE;
++        msg.arg2 = UI_UPDATE_DURATION_MS;
++        msg.sendToTarget();
++    }
++
++    public void notifyDisplayType(int type) {
++        log("notifyDisplayType:" + type);
++        mDisplayType = type;
++        nativePerfNotifyDisplayType(type);
++    }
++
++    public String getPackName() {
++        log("getPackName " + nativePerfGetPackName());
++        //mDisplayType = type;
++        //return "fuck";
++        return nativePerfGetPackName();
++    }
++
++    public int getLastBoostPid() {
++        log("getLastBoostPid " + nativePerfGetLastBoostPid());
++        //mDisplayType = type;
++        //return "fuck";
++        return nativePerfGetLastBoostPid();
++    }
++
++    public void notifyUserStatus(int type, int status) {
++        log("notifyUserStatus - type:" + type + " status:" + status);
++
++        // TODO
++    }
++
++    public boolean touchEnable() {
++        nativePerfNotifyUserStatus(IPerfServiceWrapper.NOTIFY_USER_TYPE_SCENARIO_ON,
++                                   IPerfServiceWrapper.SCN_APP_TOUCH);
++        if (mDisplayType == IPerfServiceWrapper.DISPLAY_TYPE_GAME) {
++            return false; // disable touch boost
++        }
++        bDuringTouch = true;
++        bRenderAwareValid = true;
++        mHandler.stopCheckRenderAwareTimer();
++        return true;
++    }
++
++    public boolean touchDisable() {
++        nativePerfNotifyUserStatus(IPerfServiceWrapper.NOTIFY_USER_TYPE_SCENARIO_OFF,
++                                   IPerfServiceWrapper.SCN_APP_TOUCH);
++        bDuringTouch = false;
++
++        if (mDisplayType == IPerfServiceWrapper.DISPLAY_TYPE_GAME) {
++            mHandler.stopCheckTimer(IPerfServiceWrapper.SCN_APP_TOUCH);
++            bRenderAwareValid = false;
++            return false;
++        }
++        mHandler.startCheckRenderAwareTimerMs(RENDER_AWARE_DURATION_MS);
++        return true;
++    }
++
++    private class PerfServiceThreadHandler extends Handler {
++        private static final int MESSAGE_BOOST_ENABLE            = 0;
++        private static final int MESSAGE_BOOST_DISABLE           = 1;
++        private static final int MESSAGE_BOOST_ENABLE_TIMEOUT    = 2;
++        private static final int MESSAGE_BOOST_ENABLE_TIMEOUT_MS = 3;
++        private static final int MESSAGE_NOTIFY_APP_STATE        = 4;
++
++        private static final int MESSAGE_USER_REG                = 10;
++        private static final int MESSAGE_USER_REG_BIG_LITTLE     = 11;
++        private static final int MESSAGE_USER_UNREG              = 12;
++        private static final int MESSAGE_USER_GET_CAPABILITY     = 13;
++        private static final int MESSAGE_USER_REG_SCN            = 14;
++        private static final int MESSAGE_USER_REG_SCN_CONFIG     = 15;
++        private static final int MESSAGE_USER_UNREG_SCN          = 16;
++        private static final int MESSAGE_USER_ENABLE             = 17;
++        private static final int MESSAGE_USER_ENABLE_TIMEOUT     = 18;
++        private static final int MESSAGE_USER_ENABLE_TIMEOUT_MS  = 19;
++        private static final int MESSAGE_USER_DISABLE            = 20;
++        private static final int MESSAGE_USER_RESET_ALL          = 21;
++        private static final int MESSAGE_USER_DISABLE_ALL        = 22;
++        private static final int MESSAGE_USER_RESTORE_ALL        = 23;
++        private static final int MESSAGE_DUMP_ALL                = 24;
++        private static final int MESSAGE_SET_FAVOR_PID           = 25;
++        private static final int MESSAGE_NOTIFY_FRAME_UPDATE     = 26;
++        private static final int MESSAGE_SW_FRAME_UPDATE_TIMEOUT = 27;
++        private static final int MESSAGE_TOUCH_BOOST_DURATION    = 28;
++        private static final int MESSAGE_GET_PACK_NAME           = 29;
++
++        private static final int MESSAGE_TIMER_RENDER_AWARE_DURATION = 40;
++
++        private static final int MESSAGE_TIMER_SCN_BASE          = 100;
++        private static final int MESSAGE_TIMER_SCN_USER_BASE     = 200; // last message
++
++        public PerfServiceThreadHandler(Looper looper) {
++            super(looper);
++        }
++
++        @Override
++        public void handleMessage(Message msg) {
++            try {
++                switch (msg.what) {
++                    case MESSAGE_BOOST_ENABLE:
++                    {
++                        //log("MESSAGE_BOOST_ENABLE:" + msg.arg1);
++                         nativePerfBoostEnable(msg.arg1);
++                        break;
++                    }
++
++                    case MESSAGE_BOOST_DISABLE:
++                    {
++                        //log("MESSAGE_BOOST_DISABLE");
++                        nativePerfBoostDisable(msg.arg1);
++                        break;
++                    }
++
++                    case MESSAGE_BOOST_ENABLE_TIMEOUT:
++                    {
++                        //log("MESSAGE_BOOST_ENABLE_TIMEOUT");
++                        nativePerfBoostEnable(msg.arg1);
++                        startCheckTimer(msg.arg1, msg.arg2);
++                        break;
++                    }
++
++                    case MESSAGE_BOOST_ENABLE_TIMEOUT_MS:
++                    {
++                        if (msg.arg1 == IPerfServiceWrapper.SCN_SW_FRAME_UPDATE) {
++                            //log("MESSAGE_BOOST_ENABLE_TIMEOUT_MS [SCN_SW_FRAME_UPDATE] bDuringTouchBoost:" + bDuringTouchBoost);
++                            if(bRenderAwareValid == false)
++                                break;
++
++                            // adjust heap utilization
++                            mRuntime.setTargetHeapUtilization(HEAP_UTILIZATION_DURING_FRAME_UPDATE);
++                            //float utilization = mRuntime.getTargetHeapUtilization();
++                            //log("set utilization:" + utilization);
++                        }
++
++                        nativePerfBoostEnable(msg.arg1);
++                        startCheckTimerMs(msg.arg1, msg.arg2);
++                        break;
++                    }
++
++                    case MESSAGE_NOTIFY_APP_STATE:
++                    {
++                        PerfServiceAppState passedObject = (PerfServiceAppState) msg.obj;
++                        //log("MESSAGE_NOTIFY_APP_STATE");
++                        nativePerfNotifyAppState(passedObject.mPackName, passedObject.mClassName,
++                                                 passedObject.mState, passedObject.mPid);
++                        passedObject = null;
++                        msg.obj = null;
++                        break;
++                    }
++
++                    case MESSAGE_TIMER_RENDER_AWARE_DURATION:
++                    {
++                        log("MESSAGE_TIMER_RENDER_AWARE_DURATION timeout");
++                        bRenderAwareValid = false;
++                        nativePerfBoostDisable(IPerfServiceWrapper.SCN_SW_FRAME_UPDATE);
++                        break;
++                    }
++
++                    case MESSAGE_USER_ENABLE:
++                    {
++                        log("MESSAGE_USER_ENABLE: " + msg.arg1);
++                        //nativePerfUserScnEnable(msg.arg1); // move to binder thread
++                        break;
++                    }
++
++                    case MESSAGE_USER_DISABLE:
++                    {
++                        log("MESSAGE_USER_DISABLE: " + msg.arg1);
++                        nativePerfUserScnDisable(msg.arg1);
++                        break;
++                    }
++
++                    case MESSAGE_USER_ENABLE_TIMEOUT:
++                    {
++                        log("MESSAGE_USER_ENABLE_TIMEOUT: " + msg.arg1 + ", " + msg.arg2);
++                        //nativePerfUserScnEnable(msg.arg1); // move to binder thread
++                        startCheckUserTimer(msg.arg1, msg.arg2);
++                        break;
++                    }
++
++                    case MESSAGE_USER_ENABLE_TIMEOUT_MS:
++                    {
++                        log("MESSAGE_USER_ENABLE_TIMEOUT_MS: " + msg.arg1 + ", " + msg.arg2);
++                        //nativePerfUserScnEnable(msg.arg1); // move to binder thread
++                        startCheckUserTimerMs(msg.arg1, msg.arg2);
++                        break;
++                    }
++
++                    case MESSAGE_USER_UNREG_SCN:
++                    {
++                        log("MESSAGE_USER_UNREG_SCN: " + msg.arg1);
++                        nativePerfUserUnregScn(msg.arg1);
++                        break;
++                    }
++
++                    case MESSAGE_USER_RESET_ALL:
++                    {
++                        log("MESSAGE_USER_RESET_ALL");
++                        stopAllUserTimer();
++                        removeAllUserTimerList();
++                        nativePerfUserScnResetAll();
++                        break;
++                    }
++
++                    case MESSAGE_USER_DISABLE_ALL:
++                    {
++                        log("MESSAGE_USER_DISABLE_ALL");
++                        //stopAllUserTimer();
++                        nativePerfUserScnDisableAll();
++                        break;
++                    }
++
++                    case MESSAGE_USER_RESTORE_ALL:
++                    {
++                        log("MESSAGE_USER_RESTORE_ALL");
++                        nativePerfUserScnRestoreAll();
++                        break;
++                    }
++
++                    //case MESSAGE_LEVEL_BOOST:
++                    //{
++                    //    //log("MESSAGE_LEVEL_BOOST");
++                    //    startCheckTimerMs(msg.arg1, msg.arg2);
++                    //    break;
++                    //}
++
++                    default:
++                    {
++                        int msgId = msg.what;
++                        log("MESSAGE_TIMEOUT:" + msgId);
++
++                        if (msgId >= MESSAGE_TIMER_SCN_BASE && msgId < MESSAGE_TIMER_SCN_USER_BASE)
++                        {
++                            int scenario = msgId - MESSAGE_TIMER_SCN_BASE;
++                            if (IPerfServiceWrapper.SCN_APP_TOUCH == scenario) {
++                                if( touchDisable() == false)
++                                    break;
++                            }
++                            nativePerfBoostDisable(scenario);
++
++                            switch(scenario) {
++                            case IPerfServiceWrapper.SCN_SW_FRAME_UPDATE:
++                                if (bDuringTouch == false) {
++                                    bRenderAwareValid = false;
++                                }
++
++                                // adjust heap utilization
++                                mRuntime.setTargetHeapUtilization(mDefaultUtilization);
++                                float utilization = mRuntime.getTargetHeapUtilization();
++                                log("set utilization:" + utilization);
++                                break;
++
++                            default:
++                                break;
++                            }
++                        } else if (msgId >= MESSAGE_TIMER_SCN_USER_BASE) {
++                            nativePerfUserScnDisable(msg.arg1);
++                        }
++                        break;
++                    }
++                }
++            } catch (NullPointerException e) {
++                loge("Exception in PerfServiceThreadHandler.handleMessage: " + e);
++            }
++        }
++
++        private void startCheckTimer(int scenario, int timeout) {
++            if (scenario <= IPerfServiceWrapper.SCN_NONE || scenario >= IPerfServiceWrapper.SCN_MAX)
++            {
++                return;
++            }
++
++            Message msg = this.obtainMessage();
++            msg.what = MESSAGE_TIMER_SCN_BASE + scenario;
++            msg.arg1 = scenario;
++            this.sendMessageDelayed(msg, timeout * 1000);
++
++            if (!mTimeList.contains(scenario)) {
++                mTimeList.add(scenario);
++                //log("Add to mTimeList:" + scenario);
++            }
++        }
++
++        private void startCheckTimerMs(int scenario, int timeout_ms) {
++            if (scenario <= IPerfServiceWrapper.SCN_NONE || scenario >= IPerfServiceWrapper.SCN_MAX)
++            {
++                return;
++            }
++
++            Message msg = this.obtainMessage();
++            msg.what = MESSAGE_TIMER_SCN_BASE + scenario;
++            msg.arg1 = scenario;
++            this.sendMessageDelayed(msg, timeout_ms);
++
++            if (!mTimeList.contains(scenario)) {
++                mTimeList.add(scenario);
++                //log("Add to mTimeList:" + scenario);
++            }
++        }
++
++        private void stopCheckTimer(int scenario) {
++            int timer = MESSAGE_TIMER_SCN_BASE + scenario;
++            this.removeMessages(timer);
++        }
++
++        private void startCheckRenderAwareTimerMs(int timeout_ms) {
++            Message msg = this.obtainMessage();
++            msg.what = MESSAGE_TIMER_RENDER_AWARE_DURATION;
++            this.sendMessageDelayed(msg, timeout_ms);
++        }
++
++        private void stopCheckRenderAwareTimer() {
++            this.removeMessages(MESSAGE_TIMER_RENDER_AWARE_DURATION);
++        }
++
++        private void startCheckUserTimer(int handle, int timeout) {
++            Message msg = this.obtainMessage();
++            msg.what = MESSAGE_TIMER_SCN_USER_BASE + handle;
++            msg.arg1 = handle;
++            this.sendMessageDelayed(msg, timeout * 1000);
++
++            if (!mTimeList.contains(handle)) {
++                mTimeList.add(handle);
++                //log("Add to mTimeList:" + handle);
++            }
++        }
++
++        private void startCheckUserTimerMs(int handle, int timeout_ms) {
++            Message msg = this.obtainMessage();
++            msg.what = MESSAGE_TIMER_SCN_USER_BASE + handle;
++            msg.arg1 = handle;
++            this.sendMessageDelayed(msg, timeout_ms);
++
++            if (!mTimeList.contains(handle)) {
++                mTimeList.add(handle);
++                //log("Add to mTimeList:" + handle);
++            }
++        }
++
++        private void stopCheckUserTimer(int handle) {
++            int timer = MESSAGE_TIMER_SCN_USER_BASE + handle;
++            this.removeMessages(timer);
++        }
++
++        private void stopAllUserTimer() {
++            for (int i = 0; i < mTimeList.size(); i++) {
++                int timer;
++                int handle = mTimeList.get(i);
++                if (handle < IPerfServiceWrapper.SCN_MAX) {
++                    timer = MESSAGE_TIMER_SCN_BASE + handle;
++                } else {
++                    timer = MESSAGE_TIMER_SCN_USER_BASE + handle;
++                }
++                this.removeMessages(timer);
++                //log("Stop mTimeList:" + handle);
++            }
++        }
++
++        private void removeAllUserTimerList() {
++            for (int i = mTimeList.size() - 1; i >= 0; i--) {
++                mTimeList.remove(i);
++                //log("Remove mTimeList:" + i);
++            }
++            //int size = mTimeList.size();
++            //log("mTimeList size:" + size);
++        }
++    }
++
++    private void log(String info) {
++        Log.d("@M_" + TAG, "[PerfService] " + info + " ");
++    }
++
++    private void loge(String info) {
++        Log.e("@M_" + TAG, "[PerfService] ERR: " + info + " ");
++    }
++
++}
+diff --git a/services/core/java/com/mediatek/perfservice/PerfServiceStateNotifier.java b/services/core/java/com/mediatek/perfservice/PerfServiceStateNotifier.java
+new file mode 100755
+index 00000000..3e9a803e
+--- /dev/null
++++ b/services/core/java/com/mediatek/perfservice/PerfServiceStateNotifier.java
+@@ -0,0 +1,55 @@
++
++package com.mediatek.perfservice;
++
++import com.android.server.am.IActivityStateNotifier;
++import java.util.Iterator;
++import java.util.HashSet;
++
++public final class PerfServiceStateNotifier implements IActivityStateNotifier {
++        static final String TAG = "PerfServiceStateNotifier";
++
++        IPerfServiceWrapper mPerfService;
++
++        public PerfServiceStateNotifier() {
++            mPerfService = new PerfServiceWrapper(null);
++        }
++        /**
++        * Notify activity state change
++        */
++        public void notifyActivityState(String packageName, int pid,
++                String className, IActivityStateNotifier.ActivityState actState) {
++            int state;
++            //Slog.i(TAG,"[notifyActivityState] "+ packageName+ ", "+ className+ ", "+ actState);
++
++            switch(actState) {
++            case Paused:
++                state = IPerfServiceWrapper.STATE_PAUSED;
++                break;
++            case Resumed:
++                state = IPerfServiceWrapper.STATE_RESUMED;
++                break;
++            case Destroyed:
++                state = IPerfServiceWrapper.STATE_DESTROYED;
++                break;
++            case Stopped:
++                state = IPerfServiceWrapper.STATE_STOPPED;
++                break;
++            default:
++                return;
++            }
++            mPerfService.notifyAppState(packageName, className, state, pid);
++        }
++
++        /**
++        * Notify the process of activity has died
++        */
++        public void notifyAppDied(int pid, HashSet<String> packageList)
++        {
++            Iterator i = packageList.iterator();
++            while (i.hasNext()) {
++                String packageName = (String) i.next();
++                mPerfService.notifyAppState(packageName, null, IPerfServiceWrapper.STATE_DEAD, pid);
++            }
++        }
++
++}
+diff --git a/services/core/jni/Android.mk b/services/core/jni/Android.mk
+index 69488b16..fa4e74d8 100644
+--- a/services/core/jni/Android.mk
++++ b/services/core/jni/Android.mk
+@@ -33,6 +33,7 @@ LOCAL_SRC_FILES += \
+     $(LOCAL_REL_DIR)/com_android_server_UsbHostManager.cpp \
+     $(LOCAL_REL_DIR)/com_android_server_VibratorService.cpp \
+     $(LOCAL_REL_DIR)/com_android_server_PersistentDataBlockService.cpp \
++    $(LOCAL_REL_DIR)/com_mediatek_perfservice_PerfServiceManager.cpp \
+     $(LOCAL_REL_DIR)/onload.cpp
+ 
+ LOCAL_C_INCLUDES += \
+@@ -72,6 +73,10 @@ LOCAL_SHARED_LIBRARIES += \
+     libGLESv2 \
+     libnetutils \
+ 
++ifeq ($(MTK_PERFSERVICE_SUPPORT),yes)
++  LOCAL_CFLAGS += -DMTK_PERFSERVICE_SUPPORT
++endif
++
+ ifeq ($(BOARD_USES_QC_TIME_SERVICES),true)
+ LOCAL_CFLAGS += -DHAVE_QC_TIME_SERVICES=1
+ LOCAL_SHARED_LIBRARIES += libtime_genoff
+diff --git a/services/core/jni/com_mediatek_perfservice_PerfServiceManager.cpp b/services/core/jni/com_mediatek_perfservice_PerfServiceManager.cpp
+new file mode 100755
+index 00000000..7fddbe30
+--- /dev/null
++++ b/services/core/jni/com_mediatek_perfservice_PerfServiceManager.cpp
+@@ -0,0 +1,727 @@
++
++#define LOG_TAG "PerfService"
++#include "utils/Log.h"
++
++#include <stdio.h>
++#include <dlfcn.h>
++
++#include <unistd.h>
++
++#include "jni.h"
++#include "JNIHelp.h"
++#include "android_runtime/AndroidRuntime.h"
++
++namespace android
++{
++
++static int inited = false;
++
++static int (*perfBoostEnable)(int) = NULL;
++static int (*perfBoostDisable)(int) = NULL;
++static int (*perfNotifyAppState)(const char*, const char*, int, int) = NULL;
++static int (*perfUserScnReg)(int, int, int, int) = NULL;
++static int (*perfUserScnRegBigLittle)(int, int, int, int, int, int) = NULL;
++static int (*perfUserScnUnreg)(int) = NULL;
++static int (*perfUserGetCapability)(int) = NULL;
++static int (*perfUserRegScn)(int, int) = NULL;
++static int (*perfUserRegScnConfig)(int, int, int, int, int, int) = NULL;
++static int (*perfUserUnregScn)(int) = NULL;
++static int (*perfUserScnEnable)(int) = NULL;
++static int (*perfUserScnDisable)(int) = NULL;
++static int (*perfUserScnResetAll)(void) = NULL;
++static int (*perfUserScnDisableAll)(void) = NULL;
++static int (*perfUserScnRestoreAll)(void) = NULL;
++static int (*perfDumpAll)(void) = NULL;
++static int (*perfSetFavorPid)(int) = NULL;
++static int (*perfRestorePolicy)(int) = NULL;
++static int (*perfNotifyDisplayType)(int) = NULL;
++static char* (*perfGetPackName)() = NULL;
++static int (* perfGetLastBoostPid)() = NULL;
++static int (*perfNotifyUserStatus)(int, int) = NULL;
++static int (*perfLevelBoost)(int) = NULL;
++
++typedef int (*ena)(int);
++typedef int (*disa)(int);
++typedef int (*notify)(const char*, const char*, int, int);
++typedef int (*user_reg)(int, int, int, int);
++typedef int (*user_reg_big_little)(int, int, int, int, int, int);
++typedef int (*user_unreg)(int);
++typedef int (*user_get_capability)(int);
++typedef int (*user_reg_scn)(int, int);
++typedef int (*user_reg_scn_config)(int, int, int, int, int, int);
++typedef int (*user_unreg_scn)(int);
++typedef int (*user_enable)(int);
++typedef int (*user_disable)(int);
++typedef int (*user_reset_all)(void);
++typedef int (*user_disable_all)(void);
++typedef int (*user_restore_all)(void);
++typedef int (*dump_all)(void);
++typedef int (*set_favor_pid)(int);
++typedef int (*restore_policy)(int);
++typedef int (*notify_display_type)(int);
++typedef char* (*get_pack_name)();
++typedef int (*get_last_boost_pid)();
++typedef int (*notify_user_status)(int, int);
++typedef int (*level_boost)(int);
++
++#define LIB_FULL_NAME "libperfservice.so"
++
++static void init()
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    void *handle, *func;
++
++    // only enter once
++    inited = true;
++
++    handle = dlopen(LIB_FULL_NAME, RTLD_NOW);
++    if (handle == NULL) {
++        ALOGE("Can't load library: %s", dlerror());
++        return;
++    }
++
++    func = dlsym(handle, "perfBoostEnable");
++    perfBoostEnable = reinterpret_cast<ena>(func);
++
++    if (perfBoostEnable == NULL) {
++        ALOGE("perfBoostEnable error: %s", dlerror());
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfBoostDisable");
++    perfBoostDisable = reinterpret_cast<disa>(func);
++
++    if (perfBoostDisable == NULL) {
++        ALOGE("perfBoostDisable error: %s", dlerror());
++        perfBoostEnable = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfNotifyAppState");
++    perfNotifyAppState = reinterpret_cast<notify>(func);
++
++    if (perfNotifyAppState == NULL) {
++        ALOGE("perfNotifyAppState error: %s", dlerror());
++        perfNotifyAppState = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnReg");
++    perfUserScnReg = reinterpret_cast<user_reg>(func);
++
++    if (perfUserScnReg == NULL) {
++        ALOGE("perfUserScnReg error: %s", dlerror());
++        perfUserScnReg = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnRegBigLittle");
++    perfUserScnRegBigLittle = reinterpret_cast<user_reg_big_little>(func);
++
++    if (perfUserScnRegBigLittle == NULL) {
++        ALOGE("perfUserScnRegBigLittle error: %s", dlerror());
++        perfUserScnRegBigLittle = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnUnreg");
++    perfUserScnUnreg = reinterpret_cast<user_unreg>(func);
++
++    if (perfUserScnUnreg == NULL) {
++        ALOGE("perfUserScnUnreg error: %s", dlerror());
++        perfUserScnUnreg = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserGetCapability");
++    perfUserGetCapability = reinterpret_cast<user_get_capability>(func);
++
++    if (perfUserGetCapability == NULL) {
++        ALOGE("perfUserGetCapability error: %s", dlerror());
++        perfUserGetCapability = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserRegScn");
++    perfUserRegScn = reinterpret_cast<user_reg_scn>(func);
++
++    if (perfUserRegScn == NULL) {
++        ALOGE("perfUserRegScn error: %s", dlerror());
++        perfUserRegScn = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserRegScnConfig");
++    perfUserRegScnConfig = reinterpret_cast<user_reg_scn_config>(func);
++
++    if (perfUserRegScnConfig == NULL) {
++        ALOGE("perfUserRegScnConfig error: %s", dlerror());
++        perfUserRegScnConfig = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserUnregScn");
++    perfUserUnregScn = reinterpret_cast<user_unreg_scn>(func);
++
++    if (perfUserUnregScn == NULL) {
++        ALOGE("perfUserUnregScn error: %s", dlerror());
++        perfUserUnregScn = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnEnable");
++    perfUserScnEnable = reinterpret_cast<user_enable>(func);
++
++    if (perfUserScnEnable == NULL) {
++        ALOGE("perfUserScnEnable error: %s", dlerror());
++        perfUserScnEnable = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnDisable");
++    perfUserScnDisable = reinterpret_cast<user_disable>(func);
++
++    if (perfUserScnDisable == NULL) {
++        ALOGE("perfUserScnDisable error: %s", dlerror());
++        perfUserScnDisable = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnResetAll");
++    perfUserScnResetAll = reinterpret_cast<user_reset_all>(func);
++
++    if (perfUserScnResetAll == NULL) {
++        ALOGE("perfUserScnResetAll error: %s", dlerror());
++        perfUserScnResetAll = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnDisableAll");
++    perfUserScnDisableAll = reinterpret_cast<user_disable_all>(func);
++
++    if (perfUserScnDisableAll == NULL) {
++        ALOGE("perfUserScnDisableAll error: %s", dlerror());
++        perfUserScnDisableAll = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfUserScnRestoreAll");
++    perfUserScnRestoreAll = reinterpret_cast<user_restore_all>(func);
++
++    if (perfUserScnRestoreAll == NULL) {
++        ALOGE("perfUserScnRestoreAll error: %s", dlerror());
++        perfUserScnRestoreAll = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfDumpAll");
++    perfDumpAll = reinterpret_cast<dump_all>(func);
++
++    if (perfDumpAll == NULL) {
++        ALOGE("perfDumpAll error: %s", dlerror());
++        perfDumpAll = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfSetFavorPid");
++    perfSetFavorPid = reinterpret_cast<set_favor_pid>(func);
++
++    if (perfSetFavorPid == NULL) {
++        ALOGE("perfSetFavorPid error: %s", dlerror());
++        perfSetFavorPid = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfRestorePolicy");
++    perfRestorePolicy = reinterpret_cast<restore_policy>(func);
++
++    if (perfRestorePolicy == NULL) {
++        ALOGE("perfRestorePolicy error: %s", dlerror());
++        perfRestorePolicy = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfNotifyDisplayType");
++    perfNotifyDisplayType = reinterpret_cast<notify_display_type>(func);
++
++    if (perfNotifyDisplayType == NULL) {
++        ALOGE("perfNotifyDisplayType error: %s", dlerror());
++        perfNotifyDisplayType = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfGetPackName");
++    perfGetPackName= reinterpret_cast<get_pack_name>(func);
++
++    if (perfGetPackName== NULL) {
++        ALOGE("perfGetPackName error: %s", dlerror());
++        perfGetPackName= NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfGetLastBoostPid");
++    perfGetLastBoostPid= reinterpret_cast<get_last_boost_pid>(func);
++
++    if (perfGetLastBoostPid== NULL) {
++        ALOGE("perfGetLastBoostPid error: %s", dlerror());
++        perfGetLastBoostPid= NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfNotifyUserStatus");
++    perfNotifyUserStatus = reinterpret_cast<notify_user_status>(func);
++
++    if (perfNotifyUserStatus == NULL) {
++        ALOGE("perfNotifyUserStatus error: %s", dlerror());
++        perfNotifyUserStatus = NULL;
++        dlclose(handle);
++        return;
++    }
++
++    func = dlsym(handle, "perfLevelBoost");
++    perfLevelBoost = reinterpret_cast<level_boost>(func);
++
++    if (perfLevelBoost == NULL) {
++        ALOGE("perfLevelBoost error: %s", dlerror());
++        perfLevelBoost = NULL;
++        dlclose(handle);
++        return;
++    }
++#endif
++}
++
++static int
++android_server_PerfBoostEnable(JNIEnv *env, jobject thiz,
++                                        jint scenario)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfBoostEnable)
++        return perfBoostEnable(scenario);
++
++    ALOGE("perfBoostEnable bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfBoostDisable(JNIEnv *env, jobject thiz,
++                                        jint scenario)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfBoostDisable)
++        return perfBoostDisable(scenario);
++
++    ALOGE("perfBoostDisable bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfNotifyAppState(JNIEnv *env, jobject thiz, jstring packName, jstring className,
++                                          jint state, jint pid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfNotifyAppState) {
++        const char *nativeApp = (packName) ? env->GetStringUTFChars(packName, 0) : NULL;
++        const char *nativeCom = (className) ? env->GetStringUTFChars(className, 0) : NULL;
++
++        if(nativeApp != NULL) {
++            //ALOGI("android_server_PerfNotifyAppState: %s %s %d", nativeApp, nativeCom, state);
++            perfNotifyAppState(nativeApp, nativeCom, state, pid);
++            if(nativeCom != NULL)
++                env->ReleaseStringUTFChars(className, nativeCom);
++            env->ReleaseStringUTFChars(packName, nativeApp);
++            return 0;
++        }
++        else
++            return -1;
++    }
++
++    ALOGE("perfNotifyAppState bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnReg(JNIEnv *env, jobject thiz,
++                                        jint scn_core, jint scn_freq, jint pid, jint tid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnReg) {
++        return perfUserScnReg(scn_core, scn_freq, pid, tid);
++    }
++
++    ALOGE("perfUserScnReg bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnRegBigLittle(JNIEnv *env, jobject thiz,
++                                        jint scn_core_little, jint scn_freq_little, jint scn_core_big, jint scn_freq_big, jint pid, jint tid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnRegBigLittle)
++        return perfUserScnRegBigLittle(scn_core_little, scn_freq_little, scn_core_big, scn_freq_big, pid, tid);
++
++    ALOGE("perfUserScnRegBigLittle bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnUnreg(JNIEnv *env, jobject thiz,
++                                        jint handle)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnUnreg)
++        return perfUserScnUnreg(handle);
++
++    ALOGE("perfUserScnUnreg bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserGetCapability(JNIEnv *env, jobject thiz, jint cmd)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserGetCapability)
++        return perfUserGetCapability(cmd);
++
++    ALOGE("perfUserGetCapability bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserRegScn(JNIEnv *env, jobject thiz, jint pid, jint tid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserRegScn)
++        return perfUserRegScn(pid, tid);
++
++    ALOGE("perfUserRegScn bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserRegScnConfig(JNIEnv *env, jobject thiz,
++                                     jint handle, jint cmd, jint param_1, jint param_2, jint param_3, jint param_4)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserRegScnConfig)
++        return perfUserRegScnConfig(handle, cmd, param_1, param_2, param_3, param_4);
++
++    ALOGE("perfUserRegScnConfig bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserUnregScn(JNIEnv *env, jobject thiz, jint handle)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserUnregScn)
++        return perfUserUnregScn(handle);
++
++    ALOGE("perfUserUnregScn bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnEnable(JNIEnv *env, jobject thiz,
++                                        jint handle)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnEnable)
++        return perfUserScnEnable(handle);
++
++    ALOGE("perfBoostEnable bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnDisable(JNIEnv *env, jobject thiz,
++                                        jint handle)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnDisable)
++        return perfUserScnDisable(handle);
++
++    ALOGE("perfBoostDisable bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnResetAll(JNIEnv *env, jobject thiz)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnResetAll)
++        return perfUserScnResetAll();
++
++    ALOGE("perfUserScnResetAll bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnDisableAll(JNIEnv *env, jobject thiz)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnDisableAll)
++        return perfUserScnDisableAll();
++
++    ALOGE("perfUserScnDisableAll bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfUserScnRestoreAll(JNIEnv *env, jobject thiz)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfUserScnRestoreAll)
++        return perfUserScnRestoreAll();
++
++    ALOGE("perfUserScnRestoreAll bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfDumpAll(JNIEnv *env, jobject thiz)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfDumpAll)
++        return perfDumpAll();
++
++    ALOGE("perfDumpAll bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfSetFavorPid(JNIEnv *env, jobject thiz, jint pid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfSetFavorPid)
++        return perfSetFavorPid(pid);
++
++    ALOGE("perfSetFavorPid bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfRestorePolicy(JNIEnv *env, jobject thiz, jint pid)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfRestorePolicy)
++        return perfRestorePolicy(pid);
++
++    ALOGE("perfRestorePolicy bypassed!");
++#endif
++    return -1;
++}
++
++static int
++android_server_PerfNotifyDisplayType(JNIEnv *env, jobject thiz, jint type)
++{
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfNotifyDisplayType)
++        return perfNotifyDisplayType(type);
++
++    ALOGE("perfNotifyDisplayType bypassed!");
++#endif
++    return -1;
++}
++
++jstring
++android_server_PerfGetPackName(JNIEnv *env, jobject thiz)
++{
++
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfGetPackName){
++
++            jstring jstrBuf = (env)->NewStringUTF(perfGetPackName());
++            ALOGE(perfGetPackName());
++            //jstring jstr = (env)->NewStringUTF("perfgetpack jni test");
++
++            return jstrBuf;
++       }
++    ALOGE("perfGetPackName bypassed!");
++#endif
++    //return "perf error";
++
++    return (env)->NewStringUTF("perf error");;
++}
++
++static int
++android_server_PerfGetLastBoostPid(JNIEnv *env, jobject thiz)
++{
++
++#if defined(MTK_PERFSERVICE_SUPPORT)
++    if (!inited)
++        init();
++
++    if (perfGetLastBoostPid){
++            return perfGetLastBoostPid();
++       }
++    ALOGE("perfGetLastBoostPid bypassed!");
++#endif
++    //return "perf error";
++
++    return -1;
++}
++
++static int
++android_server_PerfNotifyUserStatus(JNIEnv *env, jobject thiz, jint type, jint status)
++{
++    if (!inited)
++        init();
++
++    if (perfNotifyUserStatus)
++        return perfNotifyUserStatus(type, status);
++
++    ALOGE("perfNotifyUserStatus bypassed!");
++    return -1;
++}
++
++static int
++android_server_PerfLevelBoost(JNIEnv *env, jobject thiz, jint level)
++{
++    if (!inited)
++        init();
++
++    if (perfLevelBoost)
++        return perfLevelBoost(level);
++
++    ALOGE("perfLevelBoost bypassed!");
++    return -1;
++}
++
++static JNINativeMethod sMethods[] = {
++    {"nativePerfBoostEnable",    "(I)I",   (int *)android_server_PerfBoostEnable},
++    {"nativePerfBoostDisable",   "(I)I",   (int *)android_server_PerfBoostDisable},
++    {"nativePerfNotifyAppState", "(Ljava/lang/String;Ljava/lang/String;II)I", (int *)android_server_PerfNotifyAppState},
++    {"nativePerfUserScnReg",          "(IIII)I",   (int *)android_server_PerfUserScnReg},
++    {"nativePerfUserScnRegBigLittle", "(IIIIII)I", (int *)android_server_PerfUserScnRegBigLittle},
++    {"nativePerfUserScnUnreg",        "(I)I",      (int *)android_server_PerfUserScnUnreg},
++    {"nativePerfUserGetCapability", "(I)I",        (int *)android_server_PerfUserGetCapability},
++    {"nativePerfUserRegScn", "(II)I",              (int *)android_server_PerfUserRegScn},
++    {"nativePerfUserRegScnConfig", "(IIIIII)I",    (int *)android_server_PerfUserRegScnConfig},
++    {"nativePerfUserUnregScn", "(I)I",             (int *)android_server_PerfUserUnregScn},
++    {"nativePerfUserScnEnable",    "(I)I", (int *)android_server_PerfUserScnEnable},
++    {"nativePerfUserScnDisable",   "(I)I", (int *)android_server_PerfUserScnDisable},
++    {"nativePerfUserScnResetAll",  "()I",  (int *)android_server_PerfUserScnResetAll},
++    {"nativePerfUserScnDisableAll","()I",  (int *)android_server_PerfUserScnDisableAll},
++    {"nativePerfUserScnRestoreAll","()I",  (int *)android_server_PerfUserScnRestoreAll},
++    {"nativePerfDumpAll","()I",       (int *)android_server_PerfDumpAll},
++    {"nativePerfSetFavorPid","(I)I",  (int *)android_server_PerfSetFavorPid},
++    {"nativePerfRestorePolicy","(I)I",(int *)android_server_PerfRestorePolicy},
++    {"nativePerfNotifyDisplayType","(I)I",  (int *)android_server_PerfNotifyDisplayType},
++    {"nativePerfGetPackName","()Ljava/lang/String;",  (jstring * )android_server_PerfGetPackName},
++    {"nativePerfGetLastBoostPid","()I",  (int * )android_server_PerfGetLastBoostPid},
++    {"nativePerfNotifyUserStatus","(II)I",  (int *)android_server_PerfNotifyUserStatus},
++    {"nativePerfLevelBoost", "(I)I",  (int *)android_server_PerfLevelBoost},
++};
++
++int register_com_mediatek_perfservice_PerfServiceManager(JNIEnv* env)
++{
++    jclass clazz = env->FindClass("com/mediatek/perfservice/PerfServiceManager");
++
++    if (clazz == NULL) {
++        ALOGE("Can't find com/mediatek/perfservice/PerfServiceManager");
++        return -1;
++    }
++
++    return android::AndroidRuntime::registerNativeMethods(env, "com/mediatek/perfservice/PerfServiceManager", sMethods, NELEM(sMethods));
++}
++
++}
+diff --git a/services/core/jni/onload.cpp b/services/core/jni/onload.cpp
+index 1f3fde63..91f61b83 100644
+--- a/services/core/jni/onload.cpp
++++ b/services/core/jni/onload.cpp
+@@ -43,6 +43,7 @@ int register_android_server_hdmi_HdmiCecController(JNIEnv* env);
+ int register_android_server_tv_TvInputHal(JNIEnv* env);
+ int register_android_server_PersistentDataBlockService(JNIEnv* env);
+ int register_android_server_Watchdog(JNIEnv* env);
++int register_com_mediatek_perfservice_PerfServiceManager(JNIEnv* env);
+ };
+ 
+ using namespace android;
+@@ -81,6 +82,7 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* /* reserved */)
+     register_android_server_tv_TvInputHal(env);
+     register_android_server_PersistentDataBlockService(env);
+     register_android_server_Watchdog(env);
++    register_com_mediatek_perfservice_PerfServiceManager(env);
+ 
+ 
+     return JNI_VERSION_1_4;
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index d19f8aca..15ff519e 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -107,6 +107,13 @@ import java.util.Locale;
+ import java.util.Timer;
+ import java.util.TimerTask;
+ 
++/// M: add for PerfService feature @{
++import com.mediatek.perfservice.IPerfService;
++import com.mediatek.perfservice.IPerfServiceManager;
++import com.mediatek.perfservice.PerfServiceImpl;
++import com.mediatek.perfservice.PerfServiceManager;
++import com.mediatek.perfservice.PerfServiceStateNotifier;
++
+ public final class SystemServer {
+     private static final String TAG = "SystemServer";
+ 
+@@ -564,6 +571,8 @@ public final class SystemServer {
+         CountryDetectorService countryDetector = null;
+         TextServicesManagerService tsms = null;
+         LockSettingsService lockSettings = null;
++        PerfServiceStateNotifier perfServiceNotifier = null;
++        IPerfServiceManager perfServiceMgr = null;
+         AssetAtlasService atlas = null;
+         MediaRouterService mediaRouter = null;
+         GestureService gestureService = null;
+@@ -1025,6 +1034,35 @@ public final class SystemServer {
+             }
+ 
+             mSystemServiceManager.startService(LauncherAppsService.class);
++
++            /// M: add for PerfService feature @{
++            if (SystemProperties.get("ro.mtk_perfservice_support").equals("1")) {
++                try {
++                    Slog.i(TAG, "PerfService state notifier");
++                    perfServiceNotifier = new PerfServiceStateNotifier();
++                    mActivityManagerService.registerActivityStateNotifier(perfServiceNotifier);
++                } catch (Throwable e) {
++                    Slog.e(TAG, "FAIL starting PerfServiceStateNotifier", e);
++                }
++
++                // Create PerfService manager thread and add service
++                try {
++                    perfServiceMgr = new PerfServiceManager(context);
++
++                    IPerfService perfService = null;
++                    perfService = new PerfServiceImpl(context, perfServiceMgr);
++
++                    Slog.d("perfservice", "perfService=" + perfService);
++                    if (perfService != null) {
++                        ServiceManager.addService(Context.MTK_PERF_SERVICE, perfService.asBinder());
++                    }
++
++                } catch (Throwable e) {
++                    Slog.e(TAG, "perfservice Failure starting PerfService", e);
++                }
++            }
++            /// @}
++
+         }
+ 
+         if (!disableNonCoreServices) {
+@@ -1168,6 +1206,9 @@ public final class SystemServer {
+         final AudioService audioServiceF = audioService;
+         final MmsServiceBroker mmsServiceF = mmsService;
+ 
++        /// M: add for hdmi feature
++        final IPerfServiceManager perfServiceF = perfServiceMgr;
++
+         // We now tell the activity manager it is okay to run third party
+         // code.  It will call back into us once it has gotten to the state
+         // where third party code can really run (but before it has actually
+@@ -1296,6 +1337,18 @@ public final class SystemServer {
+                 } catch (Throwable e) {
+                     reportWtf("Notifying MmsService running", e);
+                 }
++
++                /// M: add for PerfService feature @{
++                if (SystemProperties.get("ro.mtk_perfservice_support").equals("1")) {
++                    // Notify PerfService manager of system ready
++                    try {
++                        if (perfServiceF != null) perfServiceF.systemReady();
++                    } catch (Throwable e) {
++                        reportWtf("making PerfServiceManager ready", e);
++                    }
++                }
++                /// @}
++
+             }
+         });
+     }
+-- 
+2.30.2
+

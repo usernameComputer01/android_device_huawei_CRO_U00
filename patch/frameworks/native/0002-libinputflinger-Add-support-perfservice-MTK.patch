@@ -1,0 +1,118 @@
+From ead0f77301bf53f4f7c5fdb674b08f27db7d17ce Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Fri, 24 Feb 2023 15:13:40 +0300
+Subject: [PATCH] libinputflinger: Add support perfservice(MTK)
+
+Change-Id: Ibc165a0b2305a1dc1ac5d4389c7954d27f16c950
+---
+ services/inputflinger/Android.mk          |  3 ++
+ services/inputflinger/InputDispatcher.cpp | 58 +++++++++++++++++++++++
+ 2 files changed, 61 insertions(+)
+
+diff --git a/services/inputflinger/Android.mk b/services/inputflinger/Android.mk
+index ed867d8..a4b1175 100644
+--- a/services/inputflinger/Android.mk
++++ b/services/inputflinger/Android.mk
+@@ -38,6 +38,9 @@ LOCAL_SHARED_LIBRARIES := \
+ # TODO: Move inputflinger to its own process and mark it hidden
+ #LOCAL_CFLAGS += -fvisibility=hidden
+ 
++LOCAL_C_INCLUDES := \
++    $(MTK_PATH_SOURCE)/hardware/perfservice/perfservicenative \
++
+ LOCAL_CFLAGS += -Wno-unused-parameter
+ 
+ LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
+diff --git a/services/inputflinger/InputDispatcher.cpp b/services/inputflinger/InputDispatcher.cpp
+index ec3ec7b..82d8c55 100644
+--- a/services/inputflinger/InputDispatcher.cpp
++++ b/services/inputflinger/InputDispatcher.cpp
+@@ -56,6 +56,11 @@
+ #include <limits.h>
+ #include <time.h>
+ 
++/// M:PerfBoost include @{
++#include <dlfcn.h>
++#include "PerfServiceNative.h"
++/// @}
++
+ #define INDENT "  "
+ #define INDENT2 "    "
+ #define INDENT3 "      "
+@@ -88,6 +93,18 @@ const nsecs_t SLOW_EVENT_PROCESSING_WARNING_TIMEOUT = 2000 * 1000000LL; // 2sec
+ // Number of recent events to keep for debugging purposes.
+ const size_t RECENT_QUEUE_MAX_SIZE = 10;
+ 
++/// M:PerfBoost define @{
++int (*perfBoostEnable)(int) = NULL;
++int (*perfBoostDisable)(int) = NULL;
++void (*perfBoostEnableTimeoutMs)(int, int) = NULL;
++
++typedef int (*ena)(int);
++typedef int (*disa)(int);
++typedef void (*ena_timeout)(int, int);
++
++#define LIB_FULL_NAME "libperfservicenative.so"
++/// @}
++
+ static inline nsecs_t now() {
+     return systemTime(SYSTEM_TIME_MONOTONIC);
+ }
+@@ -211,6 +228,30 @@ InputDispatcher::InputDispatcher(const sp<InputDispatcherPolicyInterface>& polic
+     mKeyRepeatState.lastKeyEntry = NULL;
+ 
+     policy->getDispatcherConfiguration(&mConfig);
++
++    /// M:PerfBoost init @{
++    void *handle, *func;
++
++    handle = dlopen(LIB_FULL_NAME, RTLD_NOW);
++
++    func = dlsym(handle, "PerfServiceNative_boostEnableAsync");
++    perfBoostEnable = reinterpret_cast<ena>(func);
++    if (perfBoostEnable == NULL) {
++        ALOGE("PerfServiceNative_boostEnableAsync init fail!");
++    }
++
++    func = dlsym(handle, "PerfServiceNative_boostDisableAsync");
++    perfBoostDisable = reinterpret_cast<disa>(func);
++    if (perfBoostDisable == NULL) {
++        ALOGE("PerfServiceNative_boostDisableAsync init fail!");
++    }
++
++    func = dlsym(handle, "PerfServiceNative_boostEnableTimeoutMsAsync");
++    perfBoostEnableTimeoutMs = reinterpret_cast<ena_timeout>(func);
++    if (perfBoostEnableTimeoutMs == NULL) {
++        ALOGE("PerfServiceNative_boostEnableTimeoutMsAsync init fail!");
++    }
++    /// @}
+ }
+ 
+ InputDispatcher::~InputDispatcher() {
+@@ -2508,6 +2549,23 @@ void InputDispatcher::notifyMotion(const NotifyMotionArgs* args) {
+     policyFlags |= POLICY_FLAG_TRUSTED;
+     mPolicy->interceptMotionBeforeQueueing(args->eventTime, /*byref*/ policyFlags);
+ 
++    /// M:PerfBoost enable/disable @{
++    switch (args->action) {
++        case AMOTION_EVENT_ACTION_DOWN: {
++            if (perfBoostEnable)
++                perfBoostEnable(SCN_APP_TOUCH);
++            break;
++        }
++        case AMOTION_EVENT_ACTION_UP:
++        case AMOTION_EVENT_ACTION_CANCEL: {
++            if (perfBoostEnableTimeoutMs)
++                perfBoostEnableTimeoutMs(SCN_APP_TOUCH, 100);
++            break;
++        }
++    }
++    /// @}
++
++
+     bool needWake;
+     { // acquire lock
+         mLock.lock();
+-- 
+2.30.2
+
