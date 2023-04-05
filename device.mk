@@ -224,8 +224,6 @@ ifneq ($(TARGET_BUILD_VARIANT),user)
 	persist.logd.logpersistd=logcatd
 endif
 
-PRODUCT_PROPERTY_OVERRIDES += \
-   persist.out_all_ring=false
 
 # Dalvik
 PRODUCT_PROPERTY_OVERRIDES += \
