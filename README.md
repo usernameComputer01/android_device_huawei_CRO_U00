@@ -1,6 +1,6 @@
 # HUAWEI CRO-U00
 ### Инструкция по сборке
-https://github.com/usernameComputer01/android_device_huawei_CRO_U00/blob/main/How_To_Build.md
+https://github.com/usernameComputer01/android_device_huawei_CRO_U00/blob/cm-13.0/How_To_Build.md
 
 ### Прошивку можно установить через fastboot, предварительно разблокировав загрузчик.
 Как разблокировать:
