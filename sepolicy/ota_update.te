@@ -1,0 +1,4 @@
+# Fix OTA update error
+# /data/data/org.lineageos.updater/app_updates/lineage-*.zip
+allow recovery system_app_data_file:file r_file_perms;
+

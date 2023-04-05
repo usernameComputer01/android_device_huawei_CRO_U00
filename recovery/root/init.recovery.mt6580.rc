@@ -1,0 +1,2 @@
+on post-fs-data
+    chmod 0755 /data/data/org.lineageos.updater/app_updates
