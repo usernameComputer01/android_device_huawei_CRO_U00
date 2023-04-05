@@ -1,0 +1,41 @@
+From 8e9866379281eed9a2a839cbe306f62add88aad0 Mon Sep 17 00:00:00 2001
+From: root <root@localhost.local>
+Date: Fri, 31 Mar 2023 12:58:55 +0300
+Subject: [PATCH] init: Support DM-Verity
+
+Change-Id: Ia0d92afea7768bc2b18e616c5b261f8aab033d21
+---
+ fs_mgr/fs_mgr_verity.c | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/fs_mgr/fs_mgr_verity.c b/fs_mgr/fs_mgr_verity.c
+index a9e3358..7b245a6 100644
+--- a/fs_mgr/fs_mgr_verity.c
++++ b/fs_mgr/fs_mgr_verity.c
+@@ -411,9 +411,20 @@ static int load_verity_table(struct dm_ioctl *io, char *name, uint64_t device_si
+         // of the mode parameter by omitting it; this also means that we
+         // cannot use logging mode with these drivers, they always cause
+         // an I/O error for corrupted blocks
+-        strcpy(verity_params, table);
+-    } else if (snprintf(verity_params, bufsize, "%s %d", table, mode) < 0) {
+-        return -1;
++        snprintf(verity_params,
++                bufsize,
++                "%s 1 ignore_zero_block",
++                table);
++    } else if (mode == VERITY_MODE_LOGGING) {
++        snprintf(verity_params,
++                bufsize,
++                "%s 2 ignore_zero_blocks ignore_corruption",
++                table);
++    } else if (mode == VERITY_MODE_RESTART) {
++         snprintf(verity_params,
++                  bufsize,
++                  "%s 2 ignore_zero_blocks restart_on_corruption",
++                  table);
+     }
+ 
+     // set next target boundary
+-- 
+2.30.2
+
