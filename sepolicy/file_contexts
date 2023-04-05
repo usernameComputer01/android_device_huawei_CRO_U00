@@ -15,4 +15,6 @@
 /dev/block/platform/mtk-msdc\.0/[0-9]+\.msdc0/by-name/bakraw u:object_r:bakraw_block_device:s0
 /dev/block/platform/mtk-msdc\.0/[0-9]+\.msdc0/by-name/simlock u:object_r:simlock_block_device:s0
 
+#/dev/((mtk_)?cmdq)|mtk_mdp u:object_r:mtk_cmdq_device:s0
+
 /data/misc/mnl_nlp.dat u:object_r:mnld_data_file:s0

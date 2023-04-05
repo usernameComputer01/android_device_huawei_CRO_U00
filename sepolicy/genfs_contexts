@@ -1,0 +1,1 @@
+genfscon proc /mtk_cmdq u:object_r:proc_mtk_cmdq:s0

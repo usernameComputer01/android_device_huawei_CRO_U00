@@ -1,0 +1,29 @@
+# Fix CVE 2020-0069
+# prevention syscall ioctl() for domain "shell" and "appdomain"
+
+type proc_mtk_cmdq, fs_type;
+
+define(`r_file_perms_noioctl', `{ getattr open read lock }')
+
+define(`r_dir_file_noioctl', `
+allow $1 $2:dir r_dir_perms;
+allow $1 $2:{ file lnk_file } r_file_perms_noioctl;
+
+neverallow $1 proc_mtk_cmdq:{ file lnk_file } { ioctl };
+')
+
+r_dir_file_noioctl({ 
+    shell
+    appdomain
+} , proc_mtk_cmdq)
+
+r_dir_file({
+    domain
+    -shell
+    -appdomain
+}, proc_mtk_cmdq)
+
+# if needed
+#type mtk_cmdq_device, dev_type;
+#neverallow { shell appdomain } mtk_cmdq_device:{ chr_file blk_file } no_rw_file_perms;
+
