@@ -1,0 +1,16 @@
+type psensor2kernel_exec , exec_type, file_type;
+type psensor2kernel ,domain;
+
+allow init psensor2kernel_exec:file { read getattr open execute };
+
+allow psensor2kernel block_device:dir search;
+allow psensor2kernel device:dir write;
+allow psensor2kernel kmsg_device:chr_file { write open };
+allow psensor2kernel nvdata_file:dir search;
+allow psensor2kernel nvdata_file:file { read getattr open };
+allow psensor2kernel nvram_device:blk_file { read write open };
+allow psensor2kernel sysfs:file write;
+
+allow psensor2kernel nvram_data_file:lnk_file r_file_perms;
+
+init_daemon_domain(psensor2kernel)

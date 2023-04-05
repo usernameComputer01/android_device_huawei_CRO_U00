@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- Whether to show a check box or switch for manual provision -->
+    <bool name="config_custom_multi_sim_checkbox">true</bool>
+ 
+    <!-- Whether notify user that switch data service -->
+    <bool name="confirm_to_switch_data_service">true</bool>
+
+
+</resources>
+

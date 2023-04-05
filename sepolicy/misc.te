@@ -1,0 +1,164 @@
+# CUSTOM
+
+###
+
+type bak_file, file_type, data_file_type;
+type bakraw_file, file_type, data_file_type;
+type simlock_file, file_type, data_file_type;
+
+type bak_block_device, dev_type;
+type bakraw_block_device, dev_type;
+type simlock_block_device, dev_type;
+
+allow init bak_file:sock_file read;
+allow init bakraw_file:sock_file read;
+allow init simlock_file:sock_file read;
+allow init block_device:blk_file { write relabelfrom setattr };
+allow init bak_block_device:blk_file { read write };
+allow init bak_block_device:chr_file { read open setattr };
+allow init bakraw_block_device:blk_file { read write };
+allow init bakraw_block_device:chr_file { read open setattr };
+allow init simlock_block_device:blk_file { read write };
+allow init simlock_block_device:chr_file { read open setattr };
+
+allow fsck bak_block_device:blk_file { read lock getattr write ioctl open append };
+allow fsck bakraw_block_device:blk_file { read lock getattr write ioctl open append };
+allow fsck simlock_block_device:blk_file { read lock getattr write ioctl open append };
+
+allow vold bak_block_device:blk_file { read lock getattr write ioctl open append };
+allow vold bakraw_block_device:blk_file { read lock getattr write ioctl open append };
+allow vold simlock_block_device:blk_file { read lock getattr write ioctl open append };
+
+allow toolbox bak_block_device:blk_file { read lock getattr write ioctl open append };
+allow toolbox simlock_block_device:blk_file { read lock getattr write ioctl open append };
+allow toolbox bakraw_block_device:blk_file { read lock getattr write ioctl open append };
+
+###
+type ctrl_socket_file, file_type;
+allow init ctrl_socket_file:file write;
+type_transition zygote system_data_file:dir ctrl_socket_file "ctrl_socket";
+allow init ctrl_socket_file:lnk_file { setattr relabelfrom create getattr relabelto unlink };
+allow init ctrl_socket_file:sock_file { setattr read create relabelfrom getattr relabelto unlink open };
+allow untrusted_app ctrl_socket_file:file getattr;
+allow zygote ctrl_socket_file:dir { rename search setattr read create reparent getattr write ioctl rmdir remove_name relabelto open add_name };
+allow zygote ctrl_socket_file:file { rename setattr read lock create getattr write ioctl unlink open append };
+
+###
+allow ged_srv init:unix_stream_socket connectto;
+
+###
+type duntai_iic, dev_type;
+allow init duntai_iic:chr_file { read open setattr };
+allow system_app duntai_iic:chr_file { read write ioctl open };
+
+###
+type ctl_audio_daemon_prop, property_type;
+
+#============= init ==============
+allow init debugfs:dir mounton;
+allow init debugfs:dir { read search open setattr };
+allow init proc_dirty_ratio:file write;
+
+#============= themeservice_app ==============
+allow themeservice_app network_management_service:service_manager find;
+
+##============= bluetooth ==============
+allow bluetooth nvram_device:blk_file rw_file_perms;
+
+allow init hci_attach:process { siginh transition rlimitinh };
+
+##============= mnld ==============
+allow mnld storage_file:lnk_file r_file_perms;
+allow mnld system_server:unix_stream_socket connectto;
+
+# mtk_agpsd
+allow mtk_agpsd system_server:unix_dgram_socket sendto;
+allow system_server mtk_agpsd:unix_dgram_socket sendto;
+
+# mtkmal
+allow mtkmal mtk_volte_prop:property_service set;
+allow mtkmal mtk_vt_prop:property_service set;
+allow mtkmal mtk_wfc_prop:property_service set;
+allow mtkmal system_prop:property_service set;
+allow mtkmal wfca:unix_stream_socket connectto;
+
+
+allow platform_app media_rw_data_file:lnk_file { rename setattr read lock create getattr write ioctl unlink open append };
+allow platform_app nvram_agent_service:service_manager find;
+
+
+type proc_rms, fs_type;
+allow proc_rms proc_rms:filesystem associate;
+
+allow radio ctl_audio_daemon_prop:property_service set;
+allow radio nvram_agent_service:service_manager { add find };
+
+allow servicemanager zygote:dir search;
+allow servicemanager zygote:file { read open };
+allow servicemanager zygote:process getattr;
+
+
+##============= toolbox ==============
+##allow toolbox nvram_device:blk_file create_file_perms;
+#allow toolbox nvram_device:blk_file setattr;
+
+#============= gas_srv ==============
+allow gas_srv system_app:dir r_dir_perms;
+allow gas_srv system_app:file r_file_perms;
+
+# test
+allow appdomain media_rw_data_file:file { read getattr open };
+
+allow atcid debug_prop:property_service set;
+allow atcid kmsg_device:chr_file { read write getattr open };
+allow atcid nvdata_file:dir { read write getattr open search };
+allow atcid nvdata_file:file { read write getattr open };
+allow atcid nvram_data_file:lnk_file { read write getattr open };
+allow atcid nvram_device:blk_file { read write getattr open };
+allow atcid radio:unix_stream_socket connectto;
+
+
+allow audiocmdservice_atci debug_prop:property_service set;
+allow audiocmdservice_atci init:unix_stream_socket connectto;
+allow audiocmdservice_atci powerctl_prop:property_service set;
+allow audiocmdservice_atci property_socket:sock_file write;
+allow audiocmdservice_atci shell_exec:file { read execute open execute_no_trans };
+allow audiocmdservice_atci system_file:file execute_no_trans;
+
+allow debuggerd display_service:service_manager find;
+
+allow dex2oat kernel:system module_request;
+
+allow drmserver kernel:system module_request;
+allow drmserver storage_file:dir search;
+
+allow init proc_rms:dir { read search open setattr };
+allow init proc_rms:file { read open setattr };
+allow lmkd proc_rms:file { read lock getattr write ioctl open append };
+
+allow init para_block_device:blk_file { write relabelto setattr };
+
+
+allow kernel bak_file:dir { write search add_name };
+allow kernel bak_file:file { read write create open };
+allow kernel block_device:blk_file { read write };
+allow kernel block_device:dir search;
+allow kernel fuse:dir { write search add_name };
+allow kernel fuse:file { create open };
+allow kernel mnt_user_file:dir search;
+allow kernel mnt_user_file:lnk_file read;
+
+allow system_app ctl_atci_service_prop:property_service set;
+allow system_app ctl_atcid-daemon-u_prop:property_service set;
+allow system_app ctl_audio_daemon_prop:property_service set;
+allow system_app fm_device:chr_file { read write ioctl open };
+allow system_app netd_socket:sock_file write;
+
+##
+#============= gas_srv ==============
+r_dir_file(gas_srv, radio)
+
+#============= mnld ==============
+r_dir_file(mnld, mnt_user_file)
+
+

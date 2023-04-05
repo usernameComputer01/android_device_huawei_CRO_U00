@@ -1,0 +1,31 @@
+type ontimpropsvr_exec , exec_type, file_type;
+type ontimpropsvr ,domain;
+
+type ontim_prop, property_type;
+type ontimpropertys_socket, file_type;
+
+allow init ontimpropsvr_exec:file { read getattr open execute };
+
+allow ontimpropsvr ontimpropertys_socket:sock_file { setattr read create write getattr unlink open };
+allow ontimpropsvr devpts:chr_file { read write getattr };
+allow ontimpropsvr ontimpropertys_socket:sock_file { write getattr setattr read create open };
+allow ontimpropsvr ontim_prop:property_service set;
+allow ontimpropsvr init:unix_stream_socket { read write connectto listen };
+
+allow ontimpropsvr socket_device:dir { search setattr read create getattr write ioctl rmdir remove_name unlink open add_name };
+allow ontimpropsvr socket_device:sock_file { setattr read create write getattr open };
+
+allow platform_app ontimpropertys_socket:sock_file { read write open };
+allow platform_app ontimpropsvr:unix_stream_socket connectto;
+allow radio ontimpropertys_socket:sock_file { read write open };
+allow radio ontimpropsvr:unix_stream_socket connectto;
+allow system_app ontimpropertys_socket:sock_file { read write open };
+allow system_app ontimpropsvr:unix_stream_socket connectto;
+allow untrusted_app ontimpropertys_socket:sock_file { read write open };
+allow untrusted_app ontimpropsvr:unix_stream_socket connectto;
+
+unix_socket_send(ontimpropsvr, property, mnld);
+
+net_domain(ontimpropsvr)
+init_daemon_domain(ontimpropsvr)
+

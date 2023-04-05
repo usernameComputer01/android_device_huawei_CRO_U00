@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- MiraVision start -->
+    <string name="mira_vision_title" translatable="false">MiraVision™</string>
+    <string name="mira_vision_summary">Display picture quality optimization</string>
+    <!-- MiraVision end -->
+
+    <!-- Engineer Mode start -->
+    <string name="eng_mode">Engineer Mode MTK</string>
+    <!-- Engineer Mode end -->
+
+</resources>
+

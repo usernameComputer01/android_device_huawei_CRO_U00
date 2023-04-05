@@ -1,0 +1,6 @@
+type DW9761BAF_device, dev_type;
+allow atci_service DW9761BAF_device:chr_file { read write ioctl open };
+allow factory DW9761BAF_device:chr_file { read write ioctl open };
+allow init DW9761BAF_device:chr_file { read open setattr };
+allow mediaserver DW9761BAF_device:chr_file { read write ioctl open };
+allow meta_tst DW9761BAF_device:chr_file { read write ioctl open };

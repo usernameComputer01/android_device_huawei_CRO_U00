@@ -1,0 +1,6 @@
+# allow ontim property
+ontim.    u:object_r:ontim_prop:s0
+
+#ONTIM <houruiyang><2016-08-12><start atcid, atci_service, audiocmdservice_atci>
+ctl.audio-daemon u:object_r:ctl_audio_daemon_prop:s0
+
