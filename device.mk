@@ -268,3 +268,12 @@ PRODUCT_PROPERTY_OVERRIDES += \
     cm.updater.uri=https://raw.githubusercontent.com/usernameComputer01/android_ota/CRO_U00
 
 #PRODUCT_DEFAULT_DEV_CERTIFICATE := build/target/product/security/releasekey
+
+
+#WITH_OPENGAPPS := true
+ifeq ($(WITH_OPENGAPPS),true)
+# OpenGAPPS
+GAPPS_VARIANT := pico
+GAPPS_FORCE_MATCHING_DPI := true
+$(call inherit-product, vendor/opengapps/build/opengapps-packages.mk)
+endif
