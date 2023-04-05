@@ -270,18 +270,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
 #PRODUCT_DEFAULT_DEV_CERTIFICATE := build/target/product/security/releasekey
 
 
-# DM-Verity
-PRODUCT_DEFAULT_PROPERTY_OVERRIDES += ro.boot.veritymode=logging
-#PRODUCT_DEFAULT_PROPERTY_OVERRIDES += ro.boot.veritymode=enforcing
-PRODUCT_SYSTEM_VERITY_PARTITION := /dev/block/platform/mtk-msdc.0/11120000.msdc0/by-name/system
-
-PRODUCT_SUPPORTS_VERITY := true
-#PRODUCT_SUPPORTS_VERITY_FEC := true
-PRODUCT_SUPPORTS_BOOT_SIGNER := true
-PRODUCT_VERITY_SIGNING_KEY := build/target/product/security/verity
-PRODUCT_PACKAGES += verity_key
-
-
 #WITH_OPENGAPPS := true
 ifeq ($(WITH_OPENGAPPS),true)
 # OpenGAPPS
