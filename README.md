@@ -5,7 +5,7 @@ https://github.com/usernameComputer01/android_device_huawei_CRO_U00/blob/cm-13.0
 ### Прошивку можно установить через fastboot, предварительно разблокировав загрузчик.
 Как разблокировать:
 1. https://github.com/usernameComputer01/HUAWEI-CRO-U00_unlock-bootloader
-2. https://github.com/bkerler/mtkclient/compare/main...usernameComputer01:mtkclient_mt6580:main
+2. https://github.com/usernameComputer01/mtkclient_mt6580/commits?author=usernameComputer01
 
 ### Что работает:
 + Камера(Фото, Видеозапись) фронтальная, задняя.
